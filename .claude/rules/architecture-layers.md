@@ -15,21 +15,23 @@ Cron:  Subscriber → Service
 Handles all HTTP calls.
 
 - Routing, guards (`@Roles(...)`), decorators, status codes.
-- Put the URL prefix on the class (`@Controller("todos")`) and keep handler paths nested.
+- Put the URL prefix on the class (`@Controller("auth")`) and keep handler paths nested.
 - Use `HttpStatus` from `@nestjs/common` for `@HttpCode(...)` — never raw numeric literals.
 - Injects **one transformer** and **one service**.
 - Never contains business logic or DB access — delegate immediately.
 
 ```typescript
-@Roles(AuthRole.Admin, AuthRole.Restaurant, AuthRole.User)
-@Controller("todos")
-export class TodoController {
-	@Post()
-	@HttpCode(HttpStatus.CREATED)
-	public async create(@Body() body: unknown, @AuthUser() user: TAuthUser) {
-		const input = this._transformer.toCreateRequestDTO(body);
-		const todo = await this._service.create(user.id, input);
-		return this._transformer.toCreateResponseDTO(todo);
+@Controller("auth")
+export class AuthController {
+	@Post("magic-link")
+	@HttpCode(HttpStatus.OK)
+	public async requestMagicLink(@Body() body: unknown) {
+		const input = this._transformer.toMagicLinkRequestDTO(body);
+		const result = await this._service.requestMagicLink(
+			input.email,
+			input.role,
+		);
+		return this._transformer.toMagicLinkResponseDTO(result);
 	}
 }
 ```
@@ -69,7 +71,7 @@ Global, reusable utility methods. Stateless where possible; no domain-specific b
 Same role as a controller, but triggered by cron — not HTTP.
 
 - Lives in `src/subscribers/` (registered via `src/app/subscribers.ts`).
-- One subscriber class per domain file (`todo.subscriber.ts` → `TodoSubscriber`).
+- One subscriber class per domain file (`cleanup.subscriber.ts` → `CleanupSubscriber`).
 - Each scheduled method is thin: config gate, try/catch, delegate to a service.
 - Must catch errors so an unhandled rejection does not crash the process.
 
@@ -79,14 +81,14 @@ Enums, types, constants and interfaces (ports) shared across layers live in `src
 
 ## Adapter
 
-Wraps external systems (JWT, Redis). Called by services and guards — not by controllers or repositories.
+Wraps external systems (JWT, Redis, Resend email, Google token verification). Called by services and guards — not by controllers or repositories.
 
 ## Ports (`src/domain/interfaces/`)
 
 Contracts between layers live in `src/domain/interfaces/` (types only, no runtime code).
 
 - `crud.interface.ts` defines the owner-scoped CRUD ports: `ICRUDController`, `ICRUDService`, `ICRUDTransformer`, `ICRUDRepository` (plus `TPage<TRow>`).
-- A CRUD feature's four classes **must `implements`** the matching port with the feature's own types, e.g. `TodoRepository implements ICRUDRepository<TTodo, TCreateTodoInput, TUpdateTodoInput, TListTodosInput>`. Reference: the `todo` files.
+- A CRUD feature's four classes **must `implements`** the matching port with the feature's own types, e.g. `OrderRepository implements ICRUDRepository<TOrder, TCreateOrderInput, TUpdateOrderInput, TListOrdersInput>`. No feature implements them yet (auth is not CRUD); use them for the next one.
 - `ownerId` is always the first argument of service and repository methods: `create(ownerId, input)`, `list(ownerId, query)`, `findById(ownerId, id)`, `update(ownerId, id, input)`, `delete(ownerId, id)` (service: `get`, `remove`).
 - Extra feature-specific methods (e.g. `purgeCompleted`) are added on the class beyond the port.
 - Interfaces are erased at runtime: inject the concrete class with `@Inject(ClassName)`, never the interface.

@@ -28,7 +28,7 @@ conversion, and field selection — controllers never map field names.
 - `toUpdateRequestDTO` builds the patch by **key presence** and rejects empty bodies (`at least one field is required`).
 - Dates: emit `.toISOString()`. Response schemas use `z.coerce.date()` because `@DBCache` hits come back from Redis JSON with dates as strings.
 - Never emit internal fields (`ownerId`, `_id`); validate the outgoing shape against a Zod response schema.
-- Export response types (`TTodoResponse`) from the transformer for controller return types.
+- Export response types (`TUserResponse`) from the transformer for controller return types.
 - Validation failures throw `BadRequestException`.
 
-Reference implementation: `src/transformers/todo.transformer.ts`.
+Reference implementation: `src/transformers/auth.transformer.ts`.

@@ -66,6 +66,28 @@ export class RedisCacheAdapter
 		await this._client.del(key);
 	}
 
+	/**
+	 * Atomically increments a counter, starting its TTL on the first hit, and
+	 * returns the new value (needs Redis >= 7). Used for fixed-window rate limits.
+	 */
+	public async incrementWithTtl(
+		key: string,
+		ttlSeconds: number,
+	): Promise<number> {
+		// One MULTI so a crash cannot leave a counter without a TTL. EXPIRE NX
+		// (Redis >= 7) sets the TTL only if the key has none, i.e. on the first hit.
+		const results = await this._client
+			.multi()
+			.incr(key)
+			.expire(key, ttlSeconds, "NX")
+			.exec();
+		const value = results?.[0]?.[1];
+		if (typeof value !== "number") {
+			throw new Error("Redis INCR did not return a number");
+		}
+		return value;
+	}
+
 	public async delMany(keys: string[]): Promise<void> {
 		if (keys.length === 0) {
 			return;

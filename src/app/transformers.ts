@@ -1,4 +1,4 @@
-import { TodoTransformer } from "@/transformers/todo.transformer";
+import { AuthTransformer } from "@/transformers/auth.transformer";
 import type { Provider } from "@nestjs/common";
 
-export const Transformers: Provider[] = [TodoTransformer];
+export const Transformers: Provider[] = [AuthTransformer];

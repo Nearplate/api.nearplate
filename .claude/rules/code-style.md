@@ -13,12 +13,13 @@ paths:
 
 ## Naming
 
-- Files: `kebab-case` with layer suffix (`todo.service.ts`, `todo.transformer.ts`).
-- Classes: PascalCase matching file purpose (`TodoService`).
-- Types: `T` prefix (`TTodoResponse`, `TCreateTodoInput`). Interfaces (ports): `I` prefix (`ICRUDService`).
+- Files: `kebab-case` with layer suffix (`auth.service.ts`, `auth.transformer.ts`).
+- Classes: PascalCase matching file purpose (`AuthService`).
+- Types: `T` prefix (`TUserResponse`, `TCreateUserInput`). Interfaces (ports): `I` prefix (`ICRUDService`).
 - Transformer methods: `to{Action}RequestDTO` / `to{Action}ResponseDTO`.
 - Constants in barrel arrays: PascalCase plural (`Controllers`, `Services`).
 - Private members: `_` prefix.
+- Injected dependencies are named after their class: `_` + camelCase class name (`_backgroundJobHelper`, `_resendAdapter`, `_authTokenRepository`), never shortened (`_resend`, `_service`). Mongoose `@InjectModel` fields are `_model`, `@InjectConnection` is `_connection`.
 
 ## JSDoc
 

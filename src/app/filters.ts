@@ -26,7 +26,7 @@ export class ExceptionFilter {
 		@Inject(HttpAdapterHost)
 		private readonly _httpAdapterHost: HttpAdapterHost,
 		@Inject(WINSTON_MODULE_NEST_PROVIDER)
-		private readonly _logger: LoggerService,
+		private readonly _loggerService: LoggerService,
 	) {}
 
 	catch(exception: unknown, host: ArgumentsHost) {
@@ -58,9 +58,9 @@ export class ExceptionFilter {
 		};
 
 		if (status >= 500) {
-			this._logger.error(payload, stack, "ExceptionFilter");
+			this._loggerService.error(payload, stack, "ExceptionFilter");
 		} else {
-			this._logger.warn(payload, "ExceptionFilter");
+			this._loggerService.warn(payload, "ExceptionFilter");
 		}
 	}
 }

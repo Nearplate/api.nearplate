@@ -1,4 +1,4 @@
 import { AppController } from "@/controllers/app.controller";
-import { TodoController } from "@/controllers/todo.controller";
+import { AuthController } from "@/controllers/auth.controller";
 
-export const Controllers = [AppController, TodoController];
+export const Controllers = [AppController, AuthController];

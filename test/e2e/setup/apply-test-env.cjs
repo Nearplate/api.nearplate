@@ -15,11 +15,17 @@ function applyTestEnv() {
 		JWT_RESTAURANT_ACCESS_SECRET: "e2e-restaurant-access",
 		JWT_USER_ACCESS_SECRET: "e2e-user-access",
 		JWT_GUEST_ACCESS_SECRET: "e2e-guest-access",
-		TODO_CLEANUP_CRON_ENABLED: "false",
-		TODO_CLEANUP_AFTER_DAYS: "30",
+		WEB_APP_BASE_URL: "http://localhost:3400",
+		WEB_APP_MAGIC_PATH: "/auth/magic",
+		MAGIC_LINK_TTL_SECONDS: "900",
+		MAGIC_LINK_MAX_PER_EMAIL_PER_HOUR: "3",
+		SESSION_TTL_SECONDS: "2592000",
+		GOOGLE_CLIENT_IDS: "e2e-client-id",
 	});
 
 	delete process.env.LOKI_HOST;
+	// Mail and Google are faked in the harness; never let a real key leak in.
+	delete process.env.RESEND_API_KEY;
 }
 
 applyTestEnv();

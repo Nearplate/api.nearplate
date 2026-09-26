@@ -45,6 +45,11 @@ export class JwtAdapter {
 		return sign({ sub: subject, role }, secret, { expiresIn: ttlSeconds });
 	}
 
+	/** Access-token lifetime for `role`, in seconds. */
+	public accessTtlSeconds(role: TAuthRole): number {
+		return this._keys[role].ttlSeconds;
+	}
+
 	/**
 	 * Verifies `token` against the secret of the role it *claims*, so a token is
 	 * accepted only if it was signed with that role's own secret. The claim is

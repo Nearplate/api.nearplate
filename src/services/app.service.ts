@@ -38,11 +38,12 @@ export class AppService {
 		status: THealthStatus;
 		database: THealthStatus;
 	}> {
-		const database = await this._checkDbHealth();
-
+		let status: THealthStatus = "ok";
+		const dbHealth = await this._checkDbHealth();
+		status = dbHealth;
 		return {
-			status: "ok",
-			database,
+			status,
+			database: dbHealth,
 		};
 	}
 

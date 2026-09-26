@@ -16,12 +16,16 @@ paths:
 
 ## Repositories
 
-- Inject the model: `@InjectModel(Todo.name) private readonly _model: Model<TodoDocument>`.
+- Inject the model: `@InjectModel(User.name) private readonly _model: Model<UserDocument>`.
 - Reads use `.lean()` and map `_id` → `id` into the plain `TX` row; services never see Mongoose documents.
 - Scope ownership in the filter (`{ _id, ownerId }`), never read-then-check.
 - Validate ids with `isValidObjectId` first; a malformed id returns `null`/`false`, which the service turns into `404`.
 - Return `null` for not-found / not-owned — services throw `NotFoundException`.
 - Partial updates use `$set` with only the keys present.
+- Single-use documents (magic-link tokens, refresh sessions) are consumed with `findOneAndDelete` filtered on hash **and** `expiresAt > now`; never find-then-delete (race), and never trust the TTL index alone (it sweeps about once a minute).
+- Expiring collections declare a TTL index: `Schema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 })`.
+- A unique-index violation (`error.code === 11000`) on create is a lost race, not an error: return `null` and let the service re-read.
+- Optional unique fields (e.g. `googleSub`) use a **sparse** unique index and stay `undefined` (not `null`) when absent.
 - Use transactions (`connection.startSession()`) only when several writes must succeed together (needs a replica set).
 - Cache unique lookups with `@DBCache` / invalidate writes with `@DBCacheInvalidate` — see `db-cache` rule.
 

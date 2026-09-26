@@ -1,6 +1,6 @@
 # api.nearplate
 
-Nearplate API server — NestJS 10 + MongoDB (Mongoose), Redis cache, JWT roles (`admin`, `restaurant`, `user`, `guest`), with an owner-scoped todo CRUD as the reference feature.
+Nearplate API server — NestJS 10 + MongoDB (Mongoose), Redis cache, JWT roles (`admin`, `restaurant`, `user`, `guest`), with sign-in by magic link (Resend) and Google.
 
 Conventions and architecture: [AGENTS.md](AGENTS.md).
 
@@ -31,6 +31,8 @@ docker compose down              # add -v to also drop the MongoDB volume
 
 Compose overrides `MONGODB_URI` and `REDIS_HOST` to its own services and runs with `NODE_ENV=production`; MongoDB and Redis are not published to the host. `test/docker-compose.yml` is a separate stack used only by the e2e tests.
 
+Because compose runs in production mode, `.env` must set `RESEND_API_KEY` (the API refuses to start without it) — see Authentication below.
+
 ## Releases
 
 Publish a GitHub release with a semver tag (`v1.2.3`) from `main`. The `Release` workflow then sets the version in `package.json` from the tag, adds the release's commits to `CHANGELOG.md`, and commits both back to the branch. Write commits as conventional commits (`feat:`, `fix:`, …) so the changelog reads well.
@@ -46,24 +48,38 @@ Publish a GitHub release with a semver tag (`v1.2.3`) from `main`. The `Release`
 | `npm run test:deps`               | Start MongoDB + Redis for e2e |
 | `npm run test:e2e`                | Run the e2e suite             |
 
-## Try the todo API
+## Authentication
 
-There are no login routes yet. Mint a token with the secret from your `.env`:
+| Method      | Path                      | Notes                                                                                                       |
+| ----------- | ------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| POST        | `/auth/magic-link`        | `{ email, role? }` (`role`: `user` or `restaurant`) → `{status:"sent"}` or `{status:"role_mismatch", role}` |
+| POST        | `/auth/magic-link/verify` | `{ token }` (posted by the web app from the emailed link) → tokens + user                                   |
+| POST        | `/auth/google`            | `{ idToken, role? }` — a Google ID token from the client → tokens + user                                    |
+| POST        | `/auth/refresh`           | `{ refreshToken }` → new token pair (the old refresh token is spent)                                        |
+| POST        | `/auth/logout`            | `{ refreshToken }` → 204                                                                                    |
+| POST        | `/auth/guest`             | → anonymous guest access token                                                                              |
+| GET / PATCH | `/auth/me`                | current user; PATCH `{ name?, avatarUrl? }`                                                                 |
+
+`admin` cannot be requested: promote a user in the database (`role: "admin"`).
+
+### Try it locally
+
+Without `RESEND_API_KEY` (development) the magic link is printed in the API log instead of emailed:
 
 ```bash
-TOKEN=$(node -e "console.log(require('jsonwebtoken').sign({sub:'alice',role:'user'}, process.env.JWT_USER_ACCESS_SECRET, {expiresIn:900}))")
-# (export JWT_USER_ACCESS_SECRET first, e.g. `set -a; . ./.env; set +a`)
-
-curl -s localhost:3000/health
-curl -s -X POST localhost:3000/todos -H "Authorization: Bearer $TOKEN" \
-  -H 'Content-Type: application/json' -d '{"title":"Buy milk"}'
-curl -s "localhost:3000/todos?completed=false" -H "Authorization: Bearer $TOKEN"
+curl -s -X POST localhost:3000/auth/magic-link -H 'Content-Type: application/json' \
+  -d '{"email":"you@example.com"}'
+# copy the token from the logged link (…/auth/magic?token=TOKEN), then:
+curl -s -X POST localhost:3000/auth/magic-link/verify -H 'Content-Type: application/json' \
+  -d '{"token":"TOKEN"}'
+curl -s localhost:3000/auth/me -H "Authorization: Bearer ACCESS_TOKEN"
 ```
 
-| Method | Path         | Notes                                                   |
-| ------ | ------------ | ------------------------------------------------------- |
-| POST   | `/todos`     | `{ title, description? }` → 201                         |
-| GET    | `/todos`     | `?completed=&limit=1..100&offset=` → `{ items, total }` |
-| GET    | `/todos/:id` | 404 if missing or not yours                             |
-| PATCH  | `/todos/:id` | at least one of `title`, `description`, `completed`     |
-| DELETE | `/todos/:id` | 204                                                     |
+### Configuration
+
+| Variable                                          | Purpose                                                                                                                                   |
+| ------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `RESEND_API_KEY`, `RESEND_FROM_EMAIL`             | Magic-link email. The key is **required in production** (the Docker stack runs in production mode). Verify your sending domain in Resend. |
+| `GOOGLE_CLIENT_IDS`                               | Comma-separated OAuth client ids (web/iOS/Android) accepted as the ID token audience. Unset → `/auth/google` returns 501.                 |
+| `WEB_APP_BASE_URL`, `WEB_APP_MAGIC_PATH`          | Where the emailed link points (the web app, not this API).                                                                                |
+| `JWT_{ADMIN,RESTAURANT,USER,GUEST}_ACCESS_SECRET` | One signing secret per role.                                                                                                              |

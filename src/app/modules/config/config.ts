@@ -4,9 +4,6 @@ const _str = z.string();
 const _port = z.coerce.number();
 const _seconds = z.coerce.number().int().positive();
 const _count = z.coerce.number().int().positive();
-const _bool = z
-	.union([z.boolean(), z.enum(["true", "false", "1", "0"])])
-	.transform((v) => v === true || v === "true" || v === "1");
 
 export const NodeConfigSchema = z.object({
 	NODE_ENV: z.enum(["production", "development"]).default("development"),
@@ -55,18 +52,67 @@ export const JwtConfigSchema = z.object({
 	JWT_GUEST_ACCESS_TTL_SECONDS: _seconds.default(2592000), // 30 days
 });
 
-/** Sample cron: purge completed todos older than N days. */
-export const CronConfigSchema = z.object({
-	TODO_CLEANUP_CRON_ENABLED: _bool.default(true),
-	TODO_CLEANUP_AFTER_DAYS: _count.default(30),
+/**
+ * The web app that magic links point at. Never this API: a GET on an API route
+ * would be fetched -- and therefore burned -- by email link scanners before the
+ * recipient ever clicked it.
+ */
+export const WebAppConfigSchema = z.object({
+	WEB_APP_BASE_URL: _str.default("http://localhost:3400"),
+	WEB_APP_MAGIC_PATH: _str.default("/auth/magic"),
+});
+
+export const AuthConfigSchema = z.object({
+	MAGIC_LINK_TTL_SECONDS: _seconds.default(900), // 15 minutes
+	MAGIC_LINK_MAX_PER_EMAIL_PER_HOUR: _count.default(5),
+	/** Refresh-token lifetime. */
+	SESSION_TTL_SECONDS: _seconds.default(2592000), // 30 days
+});
+
+/**
+ * Comma-separated OAuth client ids (web, iOS, Android) accepted as the
+ * `aud` of a Google ID token. Unset = `POST /auth/google` answers 501 and the
+ * rest of the API is unaffected.
+ */
+export const GoogleConfigSchema = z.object({
+	GOOGLE_CLIENT_IDS: z
+		.string()
+		.optional()
+		.transform((v) =>
+			(v ?? "")
+				.split(",")
+				.map((id) => id.trim())
+				.filter(Boolean),
+		),
+});
+
+/**
+ * Magic-link email delivery. In development an unset key means the link is
+ * logged instead of sent; production requires the key (see `ConfigSchema`).
+ */
+export const ResendConfigSchema = z.object({
+	RESEND_API_KEY: _str.optional(),
+	RESEND_FROM_EMAIL: _str.default("Nearplate <noreply@nearplate.co.in>"),
 });
 
 export const ConfigSchema = NodeConfigSchema.merge(LogConfigSchema)
 	.merge(ServerAppConfigSchema)
 	.merge(CorsConfigSchema)
+	.merge(WebAppConfigSchema)
 	.merge(MongoConfigSchema)
 	.merge(RedisConfigSchema)
 	.merge(JwtConfigSchema)
-	.merge(CronConfigSchema);
+	.merge(AuthConfigSchema)
+	.merge(GoogleConfigSchema)
+	.merge(ResendConfigSchema)
+	.superRefine((config, ctx) => {
+		if (config.NODE_ENV === "production" && !config.RESEND_API_KEY) {
+			ctx.addIssue({
+				code: z.ZodIssueCode.custom,
+				path: ["RESEND_API_KEY"],
+				message: "RESEND_API_KEY is required when NODE_ENV=production",
+			});
+		}
+	});
 
 export type TConfig = z.infer<typeof ConfigSchema>;
