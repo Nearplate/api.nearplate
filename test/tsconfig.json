@@ -1,0 +1,11 @@
+{
+	"extends": "../tsconfig.json",
+	"compilerOptions": {
+		"noEmit": true,
+		"rootDir": "..",
+		"outDir": "../dist",
+		"isolatedModules": true,
+		"types": ["jest", "node", "express"]
+	},
+	"include": ["./**/*.ts", "../src/**/*.ts", "../db/**/*.ts"]
+}

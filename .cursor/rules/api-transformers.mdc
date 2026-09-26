@@ -1,0 +1,34 @@
+---
+description: API wire format and Zod validation in transformers
+globs: src/transformers/**/*.ts,src/controllers/**/*.ts
+alwaysApply: false
+---
+
+# API contracts
+
+One transformer per controller.
+
+- **Body / query** → `to{Action}RequestDTO(input: unknown)` → domain input
+- **JSON response** → `to{Action}ResponseDTO(domainResult)` → wire DTO
+- **No body** (typical GET by id) → skip RequestDTO
+- **204 / void** → skip ResponseDTO
+
+Shared mapping stays in **private** helpers (`_toResponse`, `_parse`). When two
+actions emit the same shape, expose both public names and delegate to one
+private mapper.
+
+## Wire format
+
+JSON bodies use **camelCase** keys. Transformers own validation, date
+conversion, and field selection — controllers never map field names.
+
+## Rules
+
+- Zod schemas are `.strict()` for bodies so unknown keys are rejected.
+- `toUpdateRequestDTO` builds the patch by **key presence** and rejects empty bodies (`at least one field is required`).
+- Dates: emit `.toISOString()`. Response schemas use `z.coerce.date()` because `@DBCache` hits come back from Redis JSON with dates as strings.
+- Never emit internal fields (`ownerId`, `_id`); validate the outgoing shape against a Zod response schema.
+- Export response types (`TTodoResponse`) from the transformer for controller return types.
+- Validation failures throw `BadRequestException`.
+
+Reference implementation: `src/transformers/todo.transformer.ts`.

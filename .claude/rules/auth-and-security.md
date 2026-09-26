@@ -1,0 +1,42 @@
+---
+paths:
+  - "src/guards/**/*.ts"
+  - "src/controllers/**/*.ts"
+  - "src/adapters/jwt.adapter.ts"
+  - "src/decorators/**/*.ts"
+---
+
+# Auth and security
+
+## Four roles, one secret each
+
+`AuthRole`: `admin`, `restaurant`, `user`, `guest` (`src/domain/enums/auth-role.ts`).
+
+Each role has its own JWT secret (`JWT_{ROLE}_ACCESS_SECRET`). `JwtAdapter.verifyAccessToken`
+verifies a token against the secret of the role it _claims_, so a token signed
+for one role can never pass as another. **Guest** is a signed anonymous token
+(`sub` = device/session id) with a long TTL.
+
+## Controller auth pattern
+
+```typescript
+@Roles(AuthRole.Admin, AuthRole.Restaurant, AuthRole.User)
+@Controller("todos")
+export class TodoController {
+  @Get()
+  public async list(@AuthUser() user: TAuthUser) { ... }
+}
+```
+
+- `@Roles(...)` = metadata + the generic `AccessTokenGuard`. No token / bad token / expired → `401`. Valid token with a disallowed role → `403`.
+- The guard sets `req.authUser = { id, role }` (`id` is the JWT `sub`); read it with `@AuthUser()`.
+- Never accept an owner id from query params or body — take it from the token.
+- Return `404` (not `403`) when a resource exists but belongs to another account; enforce it in the repository filter.
+- There are no login routes yet. Tokens are minted with `JwtAdapter.signAccessToken(sub, role)` (tests use `authHeader()` from the harness).
+
+## Other rules
+
+- CORS is pinned to `CORS_ORIGIN`; add new HTTP verbs to `main.ts`.
+- Log PII carefully — use `stripSensitiveQuery` from the logger module.
+- Env vars are validated in `src/app/modules/config/config.ts` via Zod — add new vars there.
+- Never hardcode secrets; never commit `.env`.

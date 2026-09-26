@@ -1,0 +1,67 @@
+name: Release
+
+# On a published GitHub release: set package.json's version from the tag and
+# prepend the release's commits to CHANGELOG.md, then commit both back to the
+# release's target branch.
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.release.target_commitish }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Bump package.json version
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          set -euo pipefail
+          VERSION="${TAG#v}"
+          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-.+)?$ ]]; then
+            echo "::error::Tag '$TAG' is not a semver version (expected v1.2.3 or 1.2.3)."
+            exit 1
+          fi
+          # Also updates package-lock.json, so the two never drift.
+          npm version "$VERSION" --no-git-tag-version --allow-same-version
+          echo "Set version to ${VERSION}"
+
+      - name: Update CHANGELOG.md
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+          RELEASE_DATE: ${{ github.event.release.published_at }}
+        run: .github/scripts/update-changelog.sh
+
+      - name: Commit and push
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+          BRANCH: ${{ github.event.release.target_commitish }}
+        run: |
+          set -euo pipefail
+          if [[ "$BRANCH" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::Release target is a commit SHA. Create the release from a branch (e.g. main) so the changelog commit has somewhere to go."
+            exit 1
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add CHANGELOG.md package.json package-lock.json
+          if git diff --staged --quiet; then
+            echo "No changes; skipping commit."
+            exit 0
+          fi
+          git commit -m "chore: release ${TAG}"
+          git push origin "HEAD:${BRANCH}"
