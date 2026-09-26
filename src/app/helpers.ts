@@ -1,5 +1,10 @@
 import { BackgroundJobHelper } from "@/helpers/background-job.helper";
 import { SessionTokenHelper } from "@/helpers/session-token.helper";
+import { SlugHelper } from "@/helpers/slug.helper";
 import type { Provider } from "@nestjs/common";
 
-export const Helpers: Provider[] = [BackgroundJobHelper, SessionTokenHelper];
+export const Helpers: Provider[] = [
+	BackgroundJobHelper,
+	SessionTokenHelper,
+	SlugHelper,
+];

@@ -48,31 +48,67 @@ Publish a GitHub release with a semver tag (`v1.2.3`) from `main`. The `Release`
 | `npm run test:deps`               | Start MongoDB + Redis for e2e |
 | `npm run test:e2e`                | Run the e2e suite             |
 
-## Authentication
+## API
 
-| Method      | Path                      | Notes                                                                                                       |
-| ----------- | ------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| POST        | `/auth/magic-link`        | `{ email, role? }` (`role`: `user` or `restaurant`) → `{status:"sent"}` or `{status:"role_mismatch", role}` |
-| POST        | `/auth/magic-link/verify` | `{ token }` (posted by the web app from the emailed link) → tokens + user                                   |
-| POST        | `/auth/google`            | `{ idToken, role? }` — a Google ID token from the client → tokens + user                                    |
-| POST        | `/auth/refresh`           | `{ refreshToken }` → new token pair (the old refresh token is spent)                                        |
-| POST        | `/auth/logout`            | `{ refreshToken }` → 204                                                                                    |
-| POST        | `/auth/guest`             | → anonymous guest access token                                                                              |
-| GET / PATCH | `/auth/me`                | current user; PATCH `{ name?, avatarUrl? }`                                                                 |
+All routes are under `/v1`, except `GET /` and `GET /health`. Errors are a bare `{ "statusCode": N }`. Money is integer paise; coordinates are `[longitude, latitude]`.
+
+### Auth (public)
+
+| Method | Path                         | Notes                                                                                                       |
+| ------ | ---------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| POST   | `/v1/auth/magic-link`        | `{ email, role? }` (`role`: `user` or `restaurant`) → `{status:"sent"}` or `{status:"role_mismatch", role}` |
+| POST   | `/v1/auth/magic-link/verify` | `{ token }` (posted by the web app from the emailed link) → tokens + user                                   |
+| POST   | `/v1/auth/google`            | `{ idToken, role? }` — a Google ID token from the client → tokens + user                                    |
+| POST   | `/v1/auth/refresh`           | `{ refreshToken }` → new token pair (the old refresh token is spent)                                        |
+| POST   | `/v1/auth/logout`            | `{ refreshToken }` → 204                                                                                    |
+| POST   | `/v1/auth/guest`             | → anonymous guest access token                                                                              |
 
 `admin` cannot be requested: promote a user in the database (`role: "admin"`).
+
+### Profile (any signed-in role)
+
+| Method | Path                   | Notes                                       |
+| ------ | ---------------------- | ------------------------------------------- |
+| GET    | `/v1/users/me`         | current user                                |
+| PATCH  | `/v1/users/me`         | `{ firstName?, lastName?, avatarUrl? }`     |
+| POST   | `/v1/users/me/onboard` | `{ firstName, lastName }` → marks onboarded |
+
+### Restaurant owner (`restaurant` role only; other roles get 403)
+
+| Method | Path                                    | Notes                                                                                                                       |
+| ------ | --------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| POST   | `/v1/owner/restaurants`                 | `{ name, cuisines[1..10], isPureVeg, coordinates:[lng,lat], address:{line1,line2?,city,state,zipcode,phoneNumber?} }` → 201 |
+| GET    | `/v1/owner/restaurants`                 | `?status=online\|offline&limit&offset` → `{ items, total }`                                                                 |
+| GET    | `/v1/owner/restaurants/:id`             | 404 if missing or not yours                                                                                                 |
+| PATCH  | `/v1/owner/restaurants/:id`             | any of `name, cuisines, isPureVeg, coordinates, address{…}` (slug never changes)                                            |
+| PATCH  | `/v1/owner/restaurants/:id/status`      | `{ status: "online" \| "offline" }`                                                                                         |
+| DELETE | `/v1/owner/restaurants/:id`             | 204; also deletes its menu items and address                                                                                |
+| POST   | `/v1/owner/menu-items`                  | `{ restaurantId, name, category, priceInPaise, foodType: "veg"\|"egg"\|"non-veg", isAvailable? }` → 201                     |
+| GET    | `/v1/owner/menu-items`                  | `?restaurantId&category&isAvailable&limit&offset` → `{ items, total }`                                                      |
+| GET    | `/v1/owner/menu-items/:id`              | 404 if missing or not yours                                                                                                 |
+| PATCH  | `/v1/owner/menu-items/:id`              | any of `name, category, priceInPaise, foodType, isAvailable`                                                                |
+| PATCH  | `/v1/owner/menu-items/:id/availability` | `{ isAvailable }`                                                                                                           |
+| DELETE | `/v1/owner/menu-items/:id`              | 204                                                                                                                         |
+
+### Public discovery (no auth)
+
+| Method | Path                         | Notes                                                                                                                |
+| ------ | ---------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| GET    | `/v1/restaurants/nearby`     | `?lng&lat&radiusKm(≤25, default 5)&isPureVeg&cuisine&limit(≤50)` → online only, nearest first, with `distanceMeters` |
+| GET    | `/v1/restaurants/:slug`      | also returns offline restaurants (`status: "offline"`); 404 if unknown                                               |
+| GET    | `/v1/restaurants/:slug/menu` | sorted by category, then name; includes sold-out items (`isAvailable: false`)                                        |
 
 ### Try it locally
 
 Without `RESEND_API_KEY` (development) the magic link is printed in the API log instead of emailed:
 
 ```bash
-curl -s -X POST localhost:3000/auth/magic-link -H 'Content-Type: application/json' \
+curl -s -X POST localhost:3000/v1/auth/magic-link -H 'Content-Type: application/json' \
   -d '{"email":"you@example.com"}'
 # copy the token from the logged link (…/auth/magic?token=TOKEN), then:
-curl -s -X POST localhost:3000/auth/magic-link/verify -H 'Content-Type: application/json' \
+curl -s -X POST localhost:3000/v1/auth/magic-link/verify -H 'Content-Type: application/json' \
   -d '{"token":"TOKEN"}'
-curl -s localhost:3000/auth/me -H "Authorization: Bearer ACCESS_TOKEN"
+curl -s localhost:3000/v1/users/me -H "Authorization: Bearer ACCESS_TOKEN"
 ```
 
 ### Configuration
@@ -80,6 +116,6 @@ curl -s localhost:3000/auth/me -H "Authorization: Bearer ACCESS_TOKEN"
 | Variable                                          | Purpose                                                                                                                                   |
 | ------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
 | `RESEND_API_KEY`, `RESEND_FROM_EMAIL`             | Magic-link email. The key is **required in production** (the Docker stack runs in production mode). Verify your sending domain in Resend. |
-| `GOOGLE_CLIENT_IDS`                               | Comma-separated OAuth client ids (web/iOS/Android) accepted as the ID token audience. Unset → `/auth/google` returns 501.                 |
+| `GOOGLE_CLIENT_IDS`                               | Comma-separated OAuth client ids (web/iOS/Android) accepted as the ID token audience. Unset → `/v1/auth/google` returns 501.              |
 | `WEB_APP_BASE_URL`, `WEB_APP_MAGIC_PATH`          | Where the emailed link points (the web app, not this API).                                                                                |
 | `JWT_{ADMIN,RESTAURANT,USER,GUEST}_ACCESS_SECRET` | One signing secret per role.                                                                                                              |

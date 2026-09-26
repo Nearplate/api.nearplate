@@ -8,7 +8,7 @@ describe("magic link", () => {
 	async function requestLink(email: string, role?: string) {
 		const { http, resend } = getE2eApp();
 		const res = await http
-			.post("/auth/magic-link")
+			.post("/v1/auth/magic-link")
 			.send({ email, ...(role ? { role } : {}) })
 			.expect(200);
 		return { body: res.body, resend };
@@ -20,7 +20,7 @@ describe("magic link", () => {
 	}
 
 	function verify(token: string) {
-		return getE2eApp().http.post("/auth/magic-link/verify").send({ token });
+		return getE2eApp().http.post("/v1/auth/magic-link/verify").send({ token });
 	}
 
 	it("emails a link that points at the web app and answers sent", async () => {
@@ -46,7 +46,12 @@ describe("magic link", () => {
 		const res = await verify(token).expect(200);
 		expect(res.body).toMatchObject({
 			status: "authenticated",
-			user: { email: "bob@example.com", role: "user", name: null },
+			user: {
+				email: "bob@example.com",
+				role: "user",
+				firstName: null,
+				isOnboarded: false,
+			},
 			expiresIn: 900,
 		});
 		expect(typeof res.body.accessToken).toBe("string");
@@ -54,7 +59,7 @@ describe("magic link", () => {
 		expect(res.body.user).not.toHaveProperty("googleSub");
 
 		const me = await getE2eApp()
-			.http.get("/auth/me")
+			.http.get("/v1/users/me")
 			.set("Authorization", `Bearer ${res.body.accessToken}`)
 			.expect(200);
 		expect(me.body.email).toBe("bob@example.com");
@@ -78,7 +83,7 @@ describe("magic link", () => {
 
 	it("normalizes email case and whitespace", async () => {
 		await getE2eApp()
-			.http.post("/auth/magic-link")
+			.http.post("/v1/auth/magic-link")
 			.send({ email: "  Bob@Example.COM " })
 			.expect(200);
 		const { resend } = getE2eApp();
@@ -131,7 +136,7 @@ describe("magic link", () => {
 	it("never lets a request choose admin", async () => {
 		const { http } = getE2eApp();
 		await http
-			.post("/auth/magic-link")
+			.post("/v1/auth/magic-link")
 			.send({ email: "evil@example.com", role: "admin" })
 			.expect(400);
 	});
@@ -142,27 +147,30 @@ describe("magic link", () => {
 		[{ email: "a@example.com", extra: 1 }],
 		[{ email: "a@example.com", role: "guest" }],
 	])("rejects invalid request body %j with 400", async (body) => {
-		await getE2eApp().http.post("/auth/magic-link").send(body).expect(400);
+		await getE2eApp().http.post("/v1/auth/magic-link").send(body).expect(400);
 	});
 
 	it("rejects an invalid verify body with 400", async () => {
-		await getE2eApp().http.post("/auth/magic-link/verify").send({}).expect(400);
+		await getE2eApp()
+			.http.post("/v1/auth/magic-link/verify")
+			.send({})
+			.expect(400);
 	});
 
 	it("rate-limits requests per email with 429", async () => {
 		const { http } = getE2eApp();
 		for (let i = 0; i < 3; i++) {
 			await http
-				.post("/auth/magic-link")
+				.post("/v1/auth/magic-link")
 				.send({ email: "spam@example.com" })
 				.expect(200);
 		}
 		await http
-			.post("/auth/magic-link")
+			.post("/v1/auth/magic-link")
 			.send({ email: "spam@example.com" })
 			.expect(429);
 		await http
-			.post("/auth/magic-link")
+			.post("/v1/auth/magic-link")
 			.send({ email: "other@example.com" })
 			.expect(200);
 	});

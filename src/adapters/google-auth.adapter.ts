@@ -18,6 +18,8 @@ const _claimsSchema = z.object({
 	email: z.string().email(),
 	email_verified: z.boolean(),
 	name: z.string().optional(),
+	given_name: z.string().optional(),
+	family_name: z.string().optional(),
 	picture: z.string().optional(),
 });
 export type TGoogleClaims = z.infer<typeof _claimsSchema>;

@@ -2,22 +2,22 @@ import { GoogleAuthAdapter } from "@/adapters/google-auth.adapter";
 import { JwtAdapter } from "@/adapters/jwt.adapter";
 import { ResendAdapter } from "@/adapters/resend.adapter";
 import { AppModule } from "@/app/app.module";
-import {
-	accessLogMiddleware,
-	traceContextMiddleware,
-} from "@/app/modules/logger";
+import { configureApp } from "@/app/configure-app";
 import { AuthRole } from "@/domain/enums/auth-role";
+import { FoodType } from "@/domain/enums/food-type";
+import type { TCreateMenuItemInput } from "@/domain/types/menu-item.types";
+import type { TCreateRestaurantInput } from "@/domain/types/restaurant.types";
 import { UserRepository } from "@/repositories/user.repository";
+import { MenuItemService } from "@/services/menu-item.service";
+import { RestaurantService } from "@/services/restaurant.service";
+import type { TMenuItem } from "@db/schemas/menu-item.schema";
+import type { TRestaurant } from "@db/schemas/restaurant.schema";
 import type { TUser, TUserRole } from "@db/schemas/user.schema";
 import type { INestApplication } from "@nestjs/common";
 import { getConnectionToken } from "@nestjs/mongoose";
 import { Test } from "@nestjs/testing";
 import Redis from "ioredis";
 import type { Connection } from "mongoose";
-import {
-	WINSTON_MODULE_NEST_PROVIDER,
-	WINSTON_MODULE_PROVIDER,
-} from "nest-winston";
 import { randomUUID } from "node:crypto";
 import request from "supertest";
 import { FakeGoogleAuthAdapter } from "./fakes/google-auth.adapter.fake";
@@ -39,8 +39,20 @@ export type TE2eApp = {
 	seedUser: (input?: {
 		role?: TUserRole;
 		email?: string;
-		name?: string;
+		firstName?: string;
+		lastName?: string;
 	}) => Promise<TSeededUser>;
+	/** Creates a restaurant (with address) owned by `ownerId`. */
+	seedRestaurant: (
+		ownerId: string,
+		overrides?: Partial<TCreateRestaurantInput>,
+	) => Promise<TRestaurant>;
+	/** Creates a menu item on one of `ownerId`'s restaurants. */
+	seedMenuItem: (
+		ownerId: string,
+		restaurantId: string,
+		overrides?: Partial<Omit<TCreateMenuItemInput, "restaurantId">>,
+	) => Promise<TMenuItem>;
 	/** Drops every collection, clears cache/rate-limit keys, resets the fakes. */
 	reset: () => Promise<void>;
 };
@@ -90,13 +102,16 @@ export async function startE2eApp(): Promise<TE2eApp> {
 		.compile();
 
 	const app = moduleRef.createNestApplication({ bufferLogs: true });
-	app.useLogger(app.get(WINSTON_MODULE_NEST_PROVIDER));
-	app.flushLogs();
-	app.use(traceContextMiddleware);
-	app.use(accessLogMiddleware(app.get(WINSTON_MODULE_PROVIDER)));
+	configureApp(app);
 	await app.init();
 
 	const jwt = app.get(JwtAdapter);
+	const connection0 = app.get<Connection>(getConnectionToken());
+	// Indexes build asynchronously on connect; `$geoNear` and the unique slug
+	// index must exist before the first test runs.
+	await Promise.all(
+		Object.values(connection0.models).map((model) => model.init()),
+	);
 	const users = app.get(UserRepository);
 	const connection = app.get<Connection>(getConnectionToken());
 
@@ -113,7 +128,8 @@ export async function startE2eApp(): Promise<TE2eApp> {
 			const user = await users.create({
 				email: input.email ?? `${randomUUID()}@example.com`,
 				role,
-				name: input.name ?? null,
+				firstName: input.firstName ?? null,
+				lastName: input.lastName ?? null,
 				emailVerifiedAt: new Date(),
 			});
 			if (!user) {
@@ -121,6 +137,30 @@ export async function startE2eApp(): Promise<TE2eApp> {
 			}
 			return { ...user, accessToken: jwt.signAccessToken(user.id, role) };
 		},
+		seedRestaurant: (ownerId, overrides = {}) =>
+			app.get(RestaurantService).create(ownerId, {
+				name: "Spice Hub",
+				cuisines: ["indian"],
+				isPureVeg: false,
+				coordinates: [77.5946, 12.9716],
+				address: {
+					line1: "12 MG Road",
+					city: "Bengaluru",
+					state: "Karnataka",
+					zipcode: "560001",
+				},
+				...overrides,
+			}),
+		seedMenuItem: (ownerId, restaurantId, overrides = {}) =>
+			app.get(MenuItemService).create(ownerId, {
+				restaurantId,
+				name: "Paneer Tikka",
+				category: "Starters",
+				priceInPaise: 24900,
+				foodType: FoodType.Veg,
+				isAvailable: true,
+				...overrides,
+			}),
 		reset: async () => {
 			const collections = await connection.db!.collections();
 			await Promise.all(collections.map((c) => c.deleteMany({})));

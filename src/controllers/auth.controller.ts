@@ -1,8 +1,5 @@
 import { LogClass } from "@/app/modules/logger";
-import { AuthUser } from "@/decorators/auth-user.decorator";
 import { ClientContext } from "@/decorators/client-context.decorator";
-import { Roles } from "@/decorators/role.decorator";
-import { AuthRole } from "@/domain/enums/auth-role";
 import { AuthService } from "@/services/auth.service";
 import { SessionService } from "@/services/session.service";
 import {
@@ -10,18 +7,14 @@ import {
 	type TAuthResultResponse,
 	type TMagicLinkResponse,
 	type TTokensResponse,
-	type TUserResponse,
 } from "@/transformers/auth.transformer";
-import type { TAuthUser } from "@/types/auth-user";
 import type { TClientContext } from "@/types/client-context";
 import {
 	Body,
 	Controller,
-	Get,
 	HttpCode,
 	HttpStatus,
 	Inject,
-	Patch,
 	Post,
 } from "@nestjs/common";
 
@@ -111,27 +104,5 @@ export class AuthController {
 	@HttpCode(HttpStatus.OK)
 	public guest(): { accessToken: string; expiresIn: number } {
 		return this._authTransformer.toGuestResponseDTO(this._authService.guest());
-	}
-
-	/** The caller's profile. */
-	@Roles(AuthRole.Admin, AuthRole.Restaurant, AuthRole.User)
-	@Get("me")
-	public async getMe(@AuthUser() user: TAuthUser): Promise<TUserResponse> {
-		return this._authTransformer.toMeResponseDTO(
-			await this._authService.getMe(user.id),
-		);
-	}
-
-	/** Updates the caller's name and/or avatar. */
-	@Roles(AuthRole.Admin, AuthRole.Restaurant, AuthRole.User)
-	@Patch("me")
-	public async updateMe(
-		@Body() body: unknown,
-		@AuthUser() user: TAuthUser,
-	): Promise<TUserResponse> {
-		const patch = this._authTransformer.toUpdateMeRequestDTO(body);
-		return this._authTransformer.toMeResponseDTO(
-			await this._authService.updateMe(user.id, patch),
-		);
 	}
 }

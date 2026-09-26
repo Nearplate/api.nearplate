@@ -23,9 +23,16 @@ export class User {
 	@Prop({ type: String, required: true, enum: USER_ROLES })
 	role!: TUserRole;
 
-	/** Null until the user or Google supplies one. */
-	@Prop({ type: String, default: null })
-	name!: string | null;
+	/** Null until onboarding, or until Google supplies them. */
+	@Prop({ type: String, default: null, trim: true })
+	firstName!: string | null;
+
+	@Prop({ type: String, default: null, trim: true })
+	lastName!: string | null;
+
+	/** True once a first name is known (onboarding or Google profile). */
+	@Prop({ type: Boolean, default: false })
+	isOnboarded!: boolean;
 
 	@Prop({ type: String, default: null })
 	avatarUrl!: string | null;
@@ -52,7 +59,9 @@ export type TUser = {
 	id: string;
 	email: string;
 	role: TUserRole;
-	name: string | null;
+	firstName: string | null;
+	lastName: string | null;
+	isOnboarded: boolean;
 	avatarUrl: string | null;
 	googleSub: string | null;
 	emailVerifiedAt: Date | null;

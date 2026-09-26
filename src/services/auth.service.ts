@@ -166,7 +166,7 @@ export class AuthService {
 			{
 				email: claims.email.trim().toLowerCase(),
 				googleSub: claims.sub,
-				name: claims.name ?? null,
+				...this._splitName(claims),
 				avatarUrl: claims.picture ?? null,
 			},
 			role,
@@ -185,27 +185,6 @@ export class AuthService {
 		};
 	}
 
-	/** The caller's user; 401 if the account no longer exists. */
-	public async getMe(userId: string): Promise<TUser> {
-		const user = await this._userRepository.findById(userId);
-		if (!user) {
-			throw new UnauthorizedException();
-		}
-		return user;
-	}
-
-	/** Updates the caller's profile; 401 if the account no longer exists. */
-	public async updateMe(
-		userId: string,
-		patch: { name?: string | null; avatarUrl?: string | null },
-	): Promise<TUser> {
-		const user = await this._userRepository.update(userId, patch);
-		if (!user) {
-			throw new UnauthorizedException();
-		}
-		return user;
-	}
-
 	/**
 	 * The shared tail of both login methods. Finds the user (Google sub first,
 	 * being the stable id, then email), enforces the picked role against an
@@ -216,7 +195,8 @@ export class AuthService {
 		proof: {
 			email: string;
 			googleSub?: string;
-			name?: string | null;
+			firstName?: string | null;
+			lastName?: string | null;
 			avatarUrl?: string | null;
 		},
 		intendedRole: TSignupRole | undefined,
@@ -256,7 +236,8 @@ export class AuthService {
 		user: TUser,
 		proof: {
 			googleSub?: string;
-			name?: string | null;
+			firstName?: string | null;
+			lastName?: string | null;
 			avatarUrl?: string | null;
 		},
 	): Promise<TUser> {
@@ -265,7 +246,10 @@ export class AuthService {
 			...(proof.googleSub && !user.googleSub
 				? { googleSub: proof.googleSub }
 				: {}),
-			...(!user.name && proof.name ? { name: proof.name } : {}),
+			...(!user.firstName && proof.firstName
+				? { firstName: proof.firstName, isOnboarded: true }
+				: {}),
+			...(!user.lastName && proof.lastName ? { lastName: proof.lastName } : {}),
 			...(!user.avatarUrl && proof.avatarUrl
 				? { avatarUrl: proof.avatarUrl }
 				: {}),
@@ -281,7 +265,8 @@ export class AuthService {
 		proof: {
 			email: string;
 			googleSub?: string;
-			name?: string | null;
+			firstName?: string | null;
+			lastName?: string | null;
 			avatarUrl?: string | null;
 		},
 		role: TSignupRole,
@@ -289,7 +274,9 @@ export class AuthService {
 		const created = await this._userRepository.create({
 			email: proof.email,
 			role,
-			name: proof.name ?? null,
+			firstName: proof.firstName ?? null,
+			lastName: proof.lastName ?? null,
+			isOnboarded: Boolean(proof.firstName),
 			avatarUrl: proof.avatarUrl ?? null,
 			...(proof.googleSub ? { googleSub: proof.googleSub } : {}),
 			emailVerifiedAt: new Date(),
@@ -302,6 +289,23 @@ export class AuthService {
 			throw new UnauthorizedException();
 		}
 		return winner;
+	}
+
+	/**
+	 * First/last name from Google's claims: the dedicated `given_name` /
+	 * `family_name` when present, otherwise the full `name` split on whitespace.
+	 */
+	private _splitName(claims: {
+		name?: string;
+		given_name?: string;
+		family_name?: string;
+	}): { firstName: string | null; lastName: string | null } {
+		const parts = (claims.name ?? "").trim().split(/\s+/).filter(Boolean);
+		const lastFromName = parts.slice(1).join(" ");
+		return {
+			firstName: claims.given_name || parts[0] || null,
+			lastName: claims.family_name || lastFromName || null,
+		};
 	}
 
 	/** Defense in depth: a stored `admin` intent is dropped, never honoured. */

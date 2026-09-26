@@ -37,7 +37,9 @@ public async getMe(@AuthUser() user: TAuthUser) { ... }
 - The guard sets `req.authUser = { id, role }` (`id` is the JWT `sub`); read it with `@AuthUser()`. Handlers that need the stored user load it by `id` (401 if the account is gone).
 - Never accept an owner/user id from query params or body — take it from the token.
 - Return `404` (not `403`) when a resource exists but belongs to another account; enforce it in the repository filter.
-- Public routes (login, refresh, logout, guest) simply omit `@Roles`.
+- Put `@Roles(...)` on the **class** when every route shares the same roles (`owner/restaurants`, `owner/menu-items` use `@Roles(AuthRole.Restaurant)`); public routes (login, refresh, logout, guest, `restaurants/*`) omit it.
+- Ownership is enforced in the repository filter (`{ _id, ownerId }`); a foreign or unknown id is always 404. Menu items carry a denormalized `ownerId`, so they need no join.
+- Roles are never changed at runtime: only `restaurant` accounts manage restaurants, and `admin` exists only in the database.
 
 ## Other rules
 

@@ -1,17 +1,16 @@
 import { AuthRole } from "@/domain/enums/auth-role";
+import { type TUserResponse, userResponseSchema } from "./user.dto";
 import type {
 	TAuthResult,
 	TMagicLinkResult,
 	TSignupRole,
 } from "@/services/auth.service";
 import type { TAuthTokens } from "@/services/session.service";
-import type { TUser } from "@db/schemas/user.schema";
-import { BadRequestException, Injectable } from "@nestjs/common";
+import { Injectable } from "@nestjs/common";
 import { z } from "zod";
+import { parseOrBadRequest } from "./parse";
 
 const _MAX_EMAIL = 254;
-const _MAX_NAME = 100;
-const _MAX_URL = 2048;
 const _MAX_TOKEN = 2048;
 
 const _email = z.string().trim().toLowerCase().email().max(_MAX_EMAIL);
@@ -25,24 +24,6 @@ const _magicLinkSchema = z
 const _verifySchema = z.object({ token: _token }).strict();
 const _googleSchema = z.object({ idToken: _token, role: _signupRole }).strict();
 const _refreshSchema = z.object({ refreshToken: _token }).strict();
-const _updateMeSchema = z
-	.object({
-		name: z.string().trim().min(1).max(_MAX_NAME).nullable().optional(),
-		avatarUrl: z.string().url().max(_MAX_URL).nullable().optional(),
-	})
-	.strict();
-
-const _userResponseSchema = z.object({
-	id: z.string(),
-	email: z.string(),
-	role: z.enum([AuthRole.Admin, AuthRole.Restaurant, AuthRole.User]),
-	name: z.string().nullable(),
-	avatarUrl: z.string().nullable(),
-	/** Coerced: `@DBCache` hits arrive from Redis JSON with dates as strings. */
-	createdAt: z.coerce.date().transform((d) => d.toISOString()),
-});
-
-export type TUserResponse = z.infer<typeof _userResponseSchema>;
 export type TTokensResponse = TAuthTokens;
 export type TAuthResultResponse =
 	| ({ status: "authenticated"; user: TUserResponse } & TAuthTokens)
@@ -58,7 +39,7 @@ export class AuthTransformer {
 		email: string;
 		role?: TSignupRole;
 	} {
-		const data = this._parse(_magicLinkSchema, body);
+		const data = parseOrBadRequest(_magicLinkSchema, body);
 		return { email: data.email, ...(data.role ? { role: data.role } : {}) };
 	}
 
@@ -69,7 +50,7 @@ export class AuthTransformer {
 
 	/** Body → verify input. */
 	public toVerifyRequestDTO(body: unknown): { token: string } {
-		return this._parse(_verifySchema, body);
+		return parseOrBadRequest(_verifySchema, body);
 	}
 
 	/** Body → Google login input. */
@@ -77,7 +58,7 @@ export class AuthTransformer {
 		idToken: string;
 		role?: TSignupRole;
 	} {
-		const data = this._parse(_googleSchema, body);
+		const data = parseOrBadRequest(_googleSchema, body);
 		return {
 			idToken: data.idToken,
 			...(data.role ? { role: data.role } : {}),
@@ -92,7 +73,7 @@ export class AuthTransformer {
 		const { user, accessToken, refreshToken, expiresIn } = result;
 		return {
 			status: "authenticated",
-			user: this.toMeResponseDTO(user),
+			user: userResponseSchema.parse(user),
 			accessToken,
 			refreshToken,
 			expiresIn,
@@ -101,7 +82,7 @@ export class AuthTransformer {
 
 	/** Body → refresh input. */
 	public toRefreshRequestDTO(body: unknown): { refreshToken: string } {
-		return this._parse(_refreshSchema, body);
+		return parseOrBadRequest(_refreshSchema, body);
 	}
 
 	/** Tokens → wire DTO. */
@@ -111,7 +92,7 @@ export class AuthTransformer {
 
 	/** Body → logout input. */
 	public toLogoutRequestDTO(body: unknown): { refreshToken: string } {
-		return this._parse(_refreshSchema, body);
+		return parseOrBadRequest(_refreshSchema, body);
 	}
 
 	/** Guest token → wire DTO. */
@@ -120,42 +101,5 @@ export class AuthTransformer {
 		expiresIn: number;
 	}): { accessToken: string; expiresIn: number } {
 		return guest;
-	}
-
-	/** Body → profile patch, built by key presence; empty body is 400. */
-	public toUpdateMeRequestDTO(body: unknown): {
-		name?: string | null;
-		avatarUrl?: string | null;
-	} {
-		const data = this._parse(_updateMeSchema, body);
-		const patch = {
-			...(data.name !== undefined ? { name: data.name } : {}),
-			...(data.avatarUrl !== undefined ? { avatarUrl: data.avatarUrl } : {}),
-		};
-		if (Object.keys(patch).length === 0) {
-			throw new BadRequestException("at least one field is required");
-		}
-		return patch;
-	}
-
-	/** User → wire DTO (drops `googleSub` and other internals). */
-	public toMeResponseDTO(user: TUser): TUserResponse {
-		return _userResponseSchema.parse(user);
-	}
-
-	/** Zod parse that turns failures into a 400. */
-	private _parse<T extends z.ZodTypeAny>(
-		schema: T,
-		input: unknown,
-	): z.infer<T> {
-		const parsed = schema.safeParse(input);
-		if (!parsed.success) {
-			throw new BadRequestException(
-				parsed.error.issues
-					.map((i) => `${i.path.join(".") || "body"}: ${i.message}`)
-					.join("; "),
-			);
-		}
-		return parsed.data;
 	}
 }

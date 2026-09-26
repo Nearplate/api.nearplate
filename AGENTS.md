@@ -4,7 +4,7 @@ Guidance for AI coding agents (Claude Code, Cursor, Codex, …) working in this 
 
 ## Project
 
-`api.nearplate` — Nearplate API server. A NestJS 10 boilerplate with real authentication (magic link + Google, refresh sessions, role-based JWTs) as the reference feature.
+`api.nearplate` — Nearplate API server: zero-commission food ordering. A NestJS 10 backend with authentication (magic link + Google, refresh sessions, role-based JWTs), user profiles, restaurants with a geo location and menus. Ported from the Bun/Elysia legacy API; `../context.md` describes that original.
 
 ## Stack
 
@@ -68,14 +68,14 @@ Cron:  Subscriber → Service
 - **Subscriber** — cron schedule only; thin, catches errors, delegates to a service.
 - **Ports** — `src/domain/interfaces/`: contracts each layer implements (see below).
 
-Reference feature: **auth** (`src/controllers/auth.controller.ts`, `auth.transformer.ts`, `auth.service.ts` + `session.service.ts`, `user` / `auth-token` / `auth-session` repositories, schemas in `db/schemas/`). Auth is not a CRUD feature, so it does not implement the ICRUD ports.
+Reference features: **restaurants** and **menu items** (owner CRUD implementing the ICRUD ports, plus a public controller) and **auth** (magic link/Google/sessions; not CRUD).
 
 ## Ports (`src/domain/interfaces/`)
 
 Layer contracts are interfaces in `src/domain/interfaces/` (types only).
 
 - `crud.interface.ts`: `ICRUDController`, `ICRUDService`, `ICRUDTransformer`, `ICRUDRepository` (+ `TPage<TRow>`) for owner-scoped CRUD.
-- A CRUD feature's controller, transformer, service and repository **must `implements`** the matching port, e.g. `OrderService implements ICRUDService<TOrder, TCreateOrderInput, TUpdateOrderInput, TListOrdersInput>`. No feature implements them yet; use them for the next CRUD feature.
+- A CRUD feature's controller, transformer, service and repository **must `implements`** the matching port, e.g. `MenuItemService implements ICRUDService<TMenuItem, TCreateMenuItemInput, TUpdateMenuItemInput, TListMenuItemsInput>`. The repository's create/update generics may differ from the service's when persistence needs more than the request carries (`RestaurantRepository` takes a GeoJSON `location` and an `addressId`, the service takes `coordinates` and an `address`).
 - `ownerId` comes first in service/repository methods: `create(ownerId, input)`, `list(ownerId, query)`, `findById(ownerId, id)`, `update(ownerId, id, input)`, `delete(ownerId, id)` (service: `get`, `remove`). Feature-specific extras go on the class beyond the port.
 - Interfaces are erased at runtime — inject the concrete class with `@Inject(ClassName)`.
 - Shared contracts for other layers go in a new `{name}.interface.ts` beside it.
@@ -89,14 +89,26 @@ New providers must be added to the barrel arrays in `src/app/`:
 
 New Mongoose models go in `db/models.ts` (`Models`).
 
+## Routes and domain
+
+- **Everything is under `/v1`** except `/` and `/health` (kept unprefixed for the Docker healthcheck). The prefix, logger, tracing, access log and CORS are set up in `src/app/configure-app.ts`, used by both `main.ts` and the e2e harness — add HTTP-layer setup there, never in only one of them.
+- Models (`db/schemas/`): `User` (one role each: `admin`|`restaurant`|`user`; `firstName`, `lastName`, `isOnboarded`, `googleSub`), `Address`, `Restaurant` (`ownerId`, unique `slug`, `status`, `address`→Address, `cuisines`, `isPureVeg`, GeoJSON `location` `[lng, lat]`), `MenuItem` (`restaurant`, `ownerId`, `priceInPaise`, `foodType`, `isAvailable`, `location`), plus `AuthToken` / `AuthSession`. Relations: User 1—N Restaurant 1—N MenuItem; Restaurant N—1 Address.
+- Controllers: `users/me` (any signed-in role), `owner/restaurants` and `owner/menu-items` (**`@Roles(AuthRole.Restaurant)` at class level**, owner-scoped, implement `ICRUDController`), and public `restaurants` (`nearby`, `:slug`, `:slug/menu`; no auth). Declare `nearby` before `:slug`.
+- Only `restaurant` accounts create restaurants/menus; there is no runtime role promotion. Sign-up `role` decides the account type.
+- **Money is integer paise** (`priceInPaise`), never a float. Cuisines are stored lowercase.
+- Denormalized fields must be kept in sync: `MenuItem.ownerId` (never changes) and `MenuItem.location` (`RestaurantService.update` rewrites it when coordinates change).
+- No MongoDB transactions (standalone servers have none): order the writes and compensate on failure (`RestaurantService.create` deletes the address if the restaurant insert fails; `remove` deletes the restaurant first, then menu items, then the address).
+- `GET restaurants/nearby` uses `$geoNear` (`radiusKm` ≤ 25, online only, nearest first). Each collection has exactly one 2dsphere index, so `$geoNear` needs no `key`.
+- Slugs come from the name (`SlugHelper`), retry with a random suffix on collision, and never change on rename.
+
 ## Auth
 
 - **Roles**: `admin`, `restaurant`, `user` (stored in `users`, one account per email, one role) and `guest` (anonymous signed token, no row). One JWT secret per role; `admin` is **never** assignable through the API — set it in the database.
-- **Magic link**: `POST /auth/magic-link {email, role?}` → emailed link to the **web app** (`WEB_APP_BASE_URL` + `WEB_APP_MAGIC_PATH`) → web app POSTs the token to `POST /auth/magic-link/verify`. No `RESEND_API_KEY` in development = the link is logged; **required in production** (config fails to boot without it).
-- **Google**: `POST /auth/google {idToken, role?}` (the client gets the ID token; API verifies it against `GOOGLE_CLIENT_IDS`; unset = 501).
-- **Sessions**: short-lived access JWT + rotating opaque refresh token (`POST /auth/refresh`, `POST /auth/logout`); `GET/PATCH /auth/me`; `POST /auth/guest`.
+- **Magic link**: `POST /v1/auth/magic-link {email, role?}` → emailed link to the **web app** (`WEB_APP_BASE_URL` + `WEB_APP_MAGIC_PATH`) → web app POSTs the token to `POST /v1/auth/magic-link/verify`. No `RESEND_API_KEY` in development = the link is logged; **required in production** (config fails to boot without it).
+- **Google**: `POST /v1/auth/google {idToken, role?}` (the client gets the ID token; API verifies it against `GOOGLE_CLIENT_IDS`; unset = 501).
+- **Sessions**: short-lived access JWT + rotating opaque refresh token (`POST /v1/auth/refresh`, `POST /v1/auth/logout`); `GET/PATCH /v1/users/me`, `POST /v1/users/me/onboard`; `POST /v1/auth/guest`.
 - Login results carry a `status` in the 200 body (`authenticated` | `role_mismatch` | `sent`) because error bodies are bare `{ statusCode }`. Sign-up `role` (`user` | `restaurant`) applies only to new accounts; an existing account with another role returns `role_mismatch`.
-- `@Roles(AuthRole.User, ...)` applies `AccessTokenGuard`: 401 = no/invalid/expired token, 403 = valid token but role not allowed. Read the caller with `@AuthUser()` → `{ id, role }` (`id` = JWT `sub`). Never take user/owner ids from the request.
+- `@Roles(AuthRole.User, ...)` applies `AccessTokenGuard` (put it on the **class** when every route needs the same roles, e.g. the owner controllers): 401 = no/invalid/expired token, 403 = valid token but role not allowed. Read the caller with `@AuthUser()` → `{ id, role }` (`id` = JWT `sub`). Never take user/owner ids from the request.
 - Another owner's resource → **404**, enforced by scoping the repository query.
 - Magic-link tokens and refresh sessions are single-use (atomic `findOneAndDelete`), stored only as sha256 hashes, and expire via MongoDB TTL indexes.
 - Behind a proxy enable `trust proxy` in `main.ts` so session IPs are the client's.
@@ -110,11 +122,12 @@ New Mongoose models go in `db/models.ts` (`Models`).
 
 ## Testing
 
-Tests are e2e only (`test/e2e/`); no unit tests under `src/`. A behavior change is incomplete until the matching spec under `test/e2e/specs/` changes with it. The suite uses the `api_nearplate_test` database and a Redis on host port 6380. Email (Resend) and Google are always faked in the harness (`test/e2e/helpers/fakes/`); use `seedUser()` for existing accounts.
+Tests are e2e only (`test/e2e/`); no unit tests under `src/`. A behavior change is incomplete until the matching spec under `test/e2e/specs/` changes with it. The suite uses the `api_nearplate_test` database and a Redis on host port 6380. Email (Resend) and Google are always faked in the harness (`test/e2e/helpers/fakes/`); use `seedUser()` for existing accounts and `seedRestaurant()` / `seedMenuItem()` for domain data. The harness waits for index builds (`model.init()`) so `$geoNear` and the unique slug index exist before tests run.
 
 ## Conventions
 
 - JSDoc on every method; `@LogClass()` on controllers, services, repositories, adapters.
+- Money in integer paise; coordinates are `[lng, lat]`; query-string numbers are parsed with the string→Number pipe (never `z.coerce.number()`, where `Number("")` is 0).
 - `T` prefix for types, `I` prefix for interfaces (ports), `_` prefix for private members, kebab-case files with layer suffix.
 - **Injected dependencies are named after their class**: `_` + the class name in camelCase, e.g. `@Inject(BackgroundJobHelper) private readonly _backgroundJobHelper: BackgroundJobHelper`, `_resendAdapter`, `_googleAuthAdapter`, `_redisCacheAdapter`, `_authTokenRepository`, `_authTransformer`. No shortened names (`_resend`, `_redis`, `_service`). Exception: Mongoose `@InjectModel` fields are `_model` and `@InjectConnection` is `_connection`.
 - Immutability: return new objects, do not mutate inputs.

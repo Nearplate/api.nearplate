@@ -18,14 +18,18 @@ const _CACHE_FIELDS = ["id", "email", "googleSub"];
 export type TCreateUserInput = {
 	email: string;
 	role: TUserRole;
-	name?: string | null;
+	firstName?: string | null;
+	lastName?: string | null;
+	isOnboarded?: boolean;
 	avatarUrl?: string | null;
 	googleSub?: string;
 	emailVerifiedAt?: Date | null;
 };
 
 export type TUpdateUserInput = Partial<{
-	name: string | null;
+	firstName: string | null;
+	lastName: string | null;
+	isOnboarded: boolean;
 	avatarUrl: string | null;
 	googleSub: string;
 	emailVerifiedAt: Date;

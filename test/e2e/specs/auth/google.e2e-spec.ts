@@ -13,7 +13,7 @@ const CLAIMS = {
 describe("google login", () => {
 	function login(idToken: string, role?: string) {
 		return getE2eApp()
-			.http.post("/auth/google")
+			.http.post("/v1/auth/google")
 			.send({ idToken, ...(role ? { role } : {}) });
 	}
 
@@ -26,7 +26,9 @@ describe("google login", () => {
 			user: {
 				email: "gina@example.com",
 				role: "user",
-				name: "Gina Google",
+				firstName: "Gina",
+				lastName: "Google",
+				isOnboarded: true,
 				avatarUrl: "https://example.com/gina.png",
 			},
 			expiresIn: 900,
@@ -52,13 +54,50 @@ describe("google login", () => {
 		expect(linked?.id).toBe(existing.id);
 	});
 
-	it("keeps an existing name instead of overwriting it", async () => {
+	it("keeps an existing first name instead of overwriting it", async () => {
 		const { google, seedUser } = getE2eApp();
-		await seedUser({ email: CLAIMS.email, name: "Existing Name" });
+		await seedUser({ email: CLAIMS.email, firstName: "Existing" });
 		google.register("tok-1", CLAIMS);
 		const res = await login("tok-1").expect(200);
-		expect(res.body.user.name).toBe("Existing Name");
+		expect(res.body.user.firstName).toBe("Existing");
+		expect(res.body.user.lastName).toBe("Google");
 		expect(res.body.user.avatarUrl).toBe(CLAIMS.picture);
+	});
+
+	it("prefers given_name/family_name over splitting the full name", async () => {
+		const { google } = getE2eApp();
+		google.register("tok-1", {
+			...CLAIMS,
+			name: "Ignored Name",
+			given_name: "Gina",
+			family_name: "van der Berg",
+		});
+		const res = await login("tok-1").expect(200);
+		expect(res.body.user).toMatchObject({
+			firstName: "Gina",
+			lastName: "van der Berg",
+		});
+	});
+
+	it("leaves lastName null and still onboards for a single-word name", async () => {
+		const { google } = getE2eApp();
+		google.register("tok-1", { ...CLAIMS, name: "Gina" });
+		const res = await login("tok-1").expect(200);
+		expect(res.body.user).toMatchObject({
+			firstName: "Gina",
+			lastName: null,
+			isOnboarded: true,
+		});
+	});
+
+	it("does not onboard a Google user with no name", async () => {
+		const { google } = getE2eApp();
+		google.register("tok-1", { ...CLAIMS, name: undefined });
+		const res = await login("tok-1").expect(200);
+		expect(res.body.user).toMatchObject({
+			firstName: null,
+			isOnboarded: false,
+		});
 	});
 
 	it("recognises a returning user by Google sub after their email changed", async () => {
@@ -101,6 +140,6 @@ describe("google login", () => {
 		[{ idToken: "x", role: "admin" }],
 		[{ idToken: "x", extra: true }],
 	])("rejects invalid body %j with 400", async (body) => {
-		await getE2eApp().http.post("/auth/google").send(body).expect(400);
+		await getE2eApp().http.post("/v1/auth/google").send(body).expect(400);
 	});
 });
