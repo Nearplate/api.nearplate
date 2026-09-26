@@ -97,7 +97,7 @@ New Mongoose models go in `db/models.ts` (`Models`).
 - Only `restaurant` accounts create restaurants/menus; there is no runtime role promotion. Sign-up `role` decides the account type.
 - **Money is integer paise** (`priceInPaise`), never a float. Cuisines are stored lowercase.
 - Denormalized fields must be kept in sync: `MenuItem.ownerId` (never changes) and `MenuItem.location` (`RestaurantService.update` rewrites it when coordinates change).
-- No MongoDB transactions (standalone servers have none): order the writes and compensate on failure (`RestaurantService.create` deletes the address if the restaurant insert fails; `remove` deletes the restaurant first, then menu items, then the address).
+- No MongoDB transactions (a standalone server has none): order the writes and compensate on failure (`RestaurantService.create` deletes the address if the restaurant insert fails; `remove` deletes the restaurant first, then menu items, then the address).
 - `GET restaurants/nearby` uses `$geoNear` (`radiusKm` ≤ 25, online only, nearest first). Each collection has exactly one 2dsphere index, so `$geoNear` needs no `key`.
 - Slugs come from the name (`SlugHelper`), retry with a random suffix on collision, and never change on rename.
 

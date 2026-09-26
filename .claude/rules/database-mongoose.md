@@ -30,7 +30,6 @@ paths:
 - Geo: store GeoJSON `{ type: "Point", coordinates: [lng, lat] }` (`GEO_POINT_PROP` in `db/schemas/geo.ts`), keep **one** 2dsphere index per collection, and run `$geoNear` as the first aggregate stage (meters, `spherical: true`).
 - Denormalized copies (e.g. `MenuItem.location`, `MenuItem.ownerId`) must be updated wherever their source changes; document the source next to the field.
 - No transactions on standalone MongoDB: order writes and compensate (delete what you created) on failure; log, never swallow, a failed compensation.
-- Use transactions (`connection.startSession()`) only when several writes must succeed together (needs a replica set).
 - Cache unique lookups with `@DBCache` / invalidate writes with `@DBCacheInvalidate` — see `db-cache` rule.
 
 ## Connection

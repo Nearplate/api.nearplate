@@ -26,8 +26,9 @@ import { Inject, Injectable, Logger, NotFoundException } from "@nestjs/common";
 
 /**
  * Restaurant and menu business logic. A restaurant or menu item that is
- * missing, not the caller's, or under a different restaurant is a 404. MongoDB transactions are not assumed (a standalone server has
- * none), so multi-collection writes are ordered and compensated instead.
+ * missing, not the caller's, or under a different restaurant is a 404.
+ * MongoDB transactions are not assumed (a standalone server has none), so
+ * multi-collection writes are ordered and compensated instead.
  */
 @LogClass()
 @Injectable()
