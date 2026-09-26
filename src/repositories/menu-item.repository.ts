@@ -1,9 +1,6 @@
 import { LogClass } from "@/app/modules/logger";
 import type { FoodType } from "@/domain/enums/food-type";
-import type {
-	ICRUDRepository,
-	TPage,
-} from "@/domain/interfaces/crud.interface";
+import type { TPage } from "@/domain/interfaces/crud.interface";
 import type {
 	TListMenuItemsInput,
 	TUpdateMenuItemInput,
@@ -34,15 +31,16 @@ type TLeanMenuItem = Omit<TMenuItem, "id" | "restaurantId"> & {
 	restaurant: { toString(): string };
 };
 
-/** Data access for `menu_items`. Owner-facing methods scope by `ownerId`. */
+/**
+ * Data access for `menu_items`. Menu items are only reachable through their
+ * restaurant, so every owner-facing query is scoped by **both** `ownerId` and
+ * `restaurant` in the filter: an item under the wrong restaurant, or someone
+ * else's, is simply not found. That is why this class does not implement the
+ * id-only `ICRUDRepository` signatures.
+ */
 @LogClass()
 @Injectable()
-export class MenuItemRepository implements ICRUDRepository<
-	TMenuItem,
-	TCreateMenuItemRecord,
-	TUpdateMenuItemInput,
-	TListMenuItemsInput
-> {
+export class MenuItemRepository {
 	constructor(
 		@InjectModel(MenuItem.name)
 		private readonly _model: Model<MenuItemDocument>,
@@ -62,17 +60,18 @@ export class MenuItemRepository implements ICRUDRepository<
 		return this._toRow(doc.toObject() as unknown as TLeanMenuItem);
 	}
 
-	/** The owner's items, sorted by category then name. */
+	/** The restaurant's items for its owner, sorted by category then name. */
 	public async list(
 		ownerId: string,
+		restaurantId: string,
 		query: TListMenuItemsInput,
 	): Promise<TPage<TMenuItem>> {
-		if (query.restaurantId && !isValidObjectId(query.restaurantId)) {
+		if (!isValidObjectId(restaurantId)) {
 			return { items: [], total: 0 };
 		}
 		const filter: FilterQuery<MenuItemDocument> = {
 			ownerId,
-			...(query.restaurantId ? { restaurant: query.restaurantId } : {}),
+			restaurant: restaurantId,
 			...(query.category ? { category: query.category } : {}),
 			...(query.isAvailable !== undefined
 				? { isAvailable: query.isAvailable }
@@ -90,41 +89,55 @@ export class MenuItemRepository implements ICRUDRepository<
 		return { items: rows.map((row) => this._toRow(row)), total };
 	}
 
-	/** Null when missing, malformed id, or owned by someone else. */
-	public async findById(
+	/** Null when missing, malformed ids, wrong restaurant, or not the owner's. */
+	public async findInRestaurant(
 		ownerId: string,
+		restaurantId: string,
 		id: string,
 	): Promise<TMenuItem | null> {
-		if (!isValidObjectId(id)) {
+		if (!this._validIds(restaurantId, id)) {
 			return null;
 		}
 		const row = await this._model
-			.findOne({ _id: id, ownerId })
+			.findOne({ _id: id, ownerId, restaurant: restaurantId })
 			.lean<TLeanMenuItem>();
 		return row ? this._toRow(row) : null;
 	}
 
-	/** Applies only the keys present; null when missing or not owned. */
-	public async update(
+	/** Applies only the keys present; null when not found in that scope. */
+	public async updateInRestaurant(
 		ownerId: string,
+		restaurantId: string,
 		id: string,
 		patch: TUpdateMenuItemInput,
 	): Promise<TMenuItem | null> {
-		if (!isValidObjectId(id)) {
+		if (!this._validIds(restaurantId, id)) {
 			return null;
 		}
 		const row = await this._model
-			.findOneAndUpdate({ _id: id, ownerId }, { $set: patch }, { new: true })
+			.findOneAndUpdate(
+				{ _id: id, ownerId, restaurant: restaurantId },
+				{ $set: patch },
+				{ new: true },
+			)
 			.lean<TLeanMenuItem>();
 		return row ? this._toRow(row) : null;
 	}
 
-	/** True when an item was deleted. */
-	public async delete(ownerId: string, id: string): Promise<boolean> {
-		if (!isValidObjectId(id)) {
+	/** True when an item was deleted from that scope. */
+	public async deleteInRestaurant(
+		ownerId: string,
+		restaurantId: string,
+		id: string,
+	): Promise<boolean> {
+		if (!this._validIds(restaurantId, id)) {
 			return false;
 		}
-		const result = await this._model.deleteOne({ _id: id, ownerId });
+		const result = await this._model.deleteOne({
+			_id: id,
+			ownerId,
+			restaurant: restaurantId,
+		});
 		return result.deletedCount === 1;
 	}
 
@@ -154,6 +167,11 @@ export class MenuItemRepository implements ICRUDRepository<
 	/** Removes every item of a restaurant (used when the restaurant is deleted). */
 	public async deleteByRestaurant(restaurantId: string): Promise<void> {
 		await this._model.deleteMany({ restaurant: restaurantId });
+	}
+
+	/** Both path ids must be valid ObjectIds before they reach a query. */
+	private _validIds(restaurantId: string, id: string): boolean {
+		return isValidObjectId(restaurantId) && isValidObjectId(id);
 	}
 
 	/** Maps a lean document to the plain `TMenuItem` row. */

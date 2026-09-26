@@ -73,30 +73,26 @@ All routes are under `/v1`, except `GET /` and `GET /health`. Errors are a bare 
 | PATCH  | `/v1/users/me`         | `{ firstName?, lastName?, avatarUrl? }`     |
 | POST   | `/v1/users/me/onboard` | `{ firstName, lastName }` → marks onboarded |
 
-### Restaurant owner (`restaurant` role only; other roles get 403)
+### Restaurants and menus
 
-| Method | Path                                    | Notes                                                                                                                       |
-| ------ | --------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| POST   | `/v1/owner/restaurants`                 | `{ name, cuisines[1..10], isPureVeg, coordinates:[lng,lat], address:{line1,line2?,city,state,zipcode,phoneNumber?} }` → 201 |
-| GET    | `/v1/owner/restaurants`                 | `?status=online\|offline&limit&offset` → `{ items, total }`                                                                 |
-| GET    | `/v1/owner/restaurants/:id`             | 404 if missing or not yours                                                                                                 |
-| PATCH  | `/v1/owner/restaurants/:id`             | any of `name, cuisines, isPureVeg, coordinates, address{…}` (slug never changes)                                            |
-| PATCH  | `/v1/owner/restaurants/:id/status`      | `{ status: "online" \| "offline" }`                                                                                         |
-| DELETE | `/v1/owner/restaurants/:id`             | 204; also deletes its menu items and address                                                                                |
-| POST   | `/v1/owner/menu-items`                  | `{ restaurantId, name, category, priceInPaise, foodType: "veg"\|"egg"\|"non-veg", isAvailable? }` → 201                     |
-| GET    | `/v1/owner/menu-items`                  | `?restaurantId&category&isAvailable&limit&offset` → `{ items, total }`                                                      |
-| GET    | `/v1/owner/menu-items/:id`              | 404 if missing or not yours                                                                                                 |
-| PATCH  | `/v1/owner/menu-items/:id`              | any of `name, category, priceInPaise, foodType, isAvailable`                                                                |
-| PATCH  | `/v1/owner/menu-items/:id/availability` | `{ isAvailable }`                                                                                                           |
-| DELETE | `/v1/owner/menu-items/:id`              | 204                                                                                                                         |
+`POST`, `mine`, `PATCH`, `DELETE` and every `menu/items` route need the `restaurant` role (other roles get 403); the rest is public. Owners only ever see and change their own data (anything else is 404).
 
-### Public discovery (no auth)
-
-| Method | Path                         | Notes                                                                                                                |
-| ------ | ---------------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| GET    | `/v1/restaurants/nearby`     | `?lng&lat&radiusKm(≤25, default 5)&isPureVeg&cuisine&limit(≤50)` → online only, nearest first, with `distanceMeters` |
-| GET    | `/v1/restaurants/:slug`      | also returns offline restaurants (`status: "offline"`); 404 if unknown                                               |
-| GET    | `/v1/restaurants/:slug/menu` | sorted by category, then name; includes sold-out items (`isAvailable: false`)                                        |
+| Method | Path                                                  | Auth       | Notes                                                                                                                       |
+| ------ | ----------------------------------------------------- | ---------- | --------------------------------------------------------------------------------------------------------------------------- |
+| POST   | `/v1/restaurants`                                     | restaurant | `{ name, cuisines[1..10], isPureVeg, coordinates:[lng,lat], address:{line1,line2?,city,state,zipcode,phoneNumber?} }` → 201 |
+| GET    | `/v1/restaurants/mine`                                | restaurant | the caller's restaurants, `?status=online\|offline&limit&offset` → `{ items, total }`                                       |
+| GET    | `/v1/restaurants/nearby`                              | public     | `?lng&lat&radiusKm(≤25, default 5)&isPureVeg&cuisine&limit(≤50)` → online only, nearest first, with `distanceMeters`        |
+| GET    | `/v1/restaurants/:slug`                               | public     | also returns offline restaurants (`status: "offline"`); 404 if unknown                                                      |
+| PATCH  | `/v1/restaurants/:id`                                 | restaurant | any of `name, cuisines, isPureVeg, coordinates, address{…}` (slug never changes)                                            |
+| PATCH  | `/v1/restaurants/:id/status`                          | restaurant | `{ status: "online" \| "offline" }`                                                                                         |
+| DELETE | `/v1/restaurants/:id`                                 | restaurant | 204; also deletes its menu items and address                                                                                |
+| GET    | `/v1/restaurants/:slug/menu`                          | public     | sorted by category, then name; includes sold-out items (`isAvailable: false`)                                               |
+| POST   | `/v1/restaurants/:id/menu/items`                      | restaurant | `{ name, category, priceInPaise, foodType: "veg"\|"egg"\|"non-veg", isAvailable? }` → 201                                   |
+| GET    | `/v1/restaurants/:id/menu/items`                      | restaurant | `?category&isAvailable&limit&offset` → `{ items, total }`                                                                   |
+| GET    | `/v1/restaurants/:id/menu/items/:itemId`              | restaurant | 404 if missing, not yours, or under a different restaurant                                                                  |
+| PATCH  | `/v1/restaurants/:id/menu/items/:itemId`              | restaurant | any of `name, category, priceInPaise, foodType, isAvailable`                                                                |
+| PATCH  | `/v1/restaurants/:id/menu/items/:itemId/availability` | restaurant | `{ isAvailable }`                                                                                                           |
+| DELETE | `/v1/restaurants/:id/menu/items/:itemId`              | restaurant | 204                                                                                                                         |
 
 ### Try it locally
 

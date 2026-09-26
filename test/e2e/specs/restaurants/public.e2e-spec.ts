@@ -212,6 +212,8 @@ describe("public restaurants", () => {
 			await http.get("/v1/health").expect(404);
 			await http.get("/restaurants/nearby").expect(404);
 			await http.get("/auth/guest").expect(404);
+			await http.get("/v1/owner/restaurants").expect(404);
+			await http.get("/v1/owner/menu-items").expect(404);
 		});
 	});
 });

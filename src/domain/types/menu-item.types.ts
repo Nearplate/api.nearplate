@@ -1,7 +1,7 @@
 import type { FoodType } from "@/domain/enums/food-type";
 
+/** The restaurant comes from the route path, not the body. */
 export type TCreateMenuItemInput = {
-	restaurantId: string;
 	name: string;
 	category: string;
 	/** Integer paise (1/100 rupee). */
@@ -20,7 +20,6 @@ export type TUpdateMenuItemInput = Partial<{
 }>;
 
 export type TListMenuItemsInput = {
-	restaurantId?: string;
 	category?: string;
 	isAvailable?: boolean;
 	limit: number;

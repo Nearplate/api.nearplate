@@ -25,7 +25,7 @@ describe("owner restaurants", () => {
 
 	async function create(auth: string, body: object = BODY) {
 		const res = await getE2eApp()
-			.http.post("/v1/owner/restaurants")
+			.http.post("/v1/restaurants")
 			.set("Authorization", auth)
 			.send(body)
 			.expect(201);
@@ -42,7 +42,7 @@ describe("owner restaurants", () => {
 
 	describe("access", () => {
 		it("returns 401 without a token", async () => {
-			await getE2eApp().http.get("/v1/owner/restaurants").expect(401);
+			await getE2eApp().http.get("/v1/restaurants/mine").expect(401);
 		});
 
 		it.each([AuthRole.User, AuthRole.Guest])(
@@ -51,16 +51,16 @@ describe("owner restaurants", () => {
 				const { http, authHeader } = getE2eApp();
 				const h = authHeader(role);
 				await http
-					.get("/v1/owner/restaurants")
+					.get("/v1/restaurants/mine")
 					.set("Authorization", h)
 					.expect(403);
 				await http
-					.post("/v1/owner/restaurants")
+					.post("/v1/restaurants")
 					.set("Authorization", h)
 					.send(BODY)
 					.expect(403);
 				await http
-					.delete(`/v1/owner/restaurants/${MISSING_ID}`)
+					.delete(`/v1/restaurants/${MISSING_ID}`)
 					.set("Authorization", h)
 					.expect(403);
 			},
@@ -70,7 +70,7 @@ describe("owner restaurants", () => {
 			const { http, seedUser } = getE2eApp();
 			const user = await seedUser();
 			await http
-				.post("/v1/owner/restaurants")
+				.post("/v1/restaurants")
 				.set("Authorization", `Bearer ${user.accessToken}`)
 				.send(BODY)
 				.expect(403);
@@ -130,7 +130,7 @@ describe("owner restaurants", () => {
 		])("rejects %s with 400", async (_label, body) => {
 			const { auth } = await owner();
 			await getE2eApp()
-				.http.post("/v1/owner/restaurants")
+				.http.post("/v1/restaurants")
 				.set("Authorization", auth)
 				.send(body)
 				.expect(400);
@@ -147,7 +147,7 @@ describe("owner restaurants", () => {
 			await create(b.auth, { ...BODY, name: "Other" });
 
 			const res = await http
-				.get("/v1/owner/restaurants")
+				.get("/v1/restaurants/mine")
 				.set("Authorization", a.auth)
 				.expect(200);
 			expect(res.body.total).toBe(2);
@@ -156,7 +156,7 @@ describe("owner restaurants", () => {
 				"First",
 			]);
 			const page = await http
-				.get("/v1/owner/restaurants?limit=1&offset=1")
+				.get("/v1/restaurants/mine?limit=1&offset=1")
 				.set("Authorization", a.auth)
 				.expect(200);
 			expect(page.body.items).toHaveLength(1);
@@ -168,15 +168,15 @@ describe("owner restaurants", () => {
 			const { auth } = await owner();
 			const r = await create(auth);
 			await http
-				.patch(`/v1/owner/restaurants/${r.id}/status`)
+				.patch(`/v1/restaurants/${r.id}/status`)
 				.set("Authorization", auth)
 				.send({ status: "offline" })
 				.expect(200);
 			const online = await http
-				.get("/v1/owner/restaurants?status=online")
+				.get("/v1/restaurants/mine?status=online")
 				.set("Authorization", auth);
 			const offline = await http
-				.get("/v1/owner/restaurants?status=offline")
+				.get("/v1/restaurants/mine?status=offline")
 				.set("Authorization", auth);
 			expect(online.body.total).toBe(0);
 			expect(offline.body.total).toBe(1);
@@ -187,25 +187,56 @@ describe("owner restaurants", () => {
 			async (qs) => {
 				const { auth } = await owner();
 				await getE2eApp()
-					.http.get(`/v1/owner/restaurants?${qs}`)
+					.http.get(`/v1/restaurants/mine?${qs}`)
 					.set("Authorization", auth)
 					.expect(400);
 			},
 		);
 
-		it("gets one restaurant; another owner, a malformed id and an unknown id are 404", async () => {
+		it("scopes mine to the caller while the public slug lookup works for anyone", async () => {
 			const { http } = getE2eApp();
 			const a = await owner();
 			const b = await owner();
 			const r = await create(a.auth);
-			await http
-				.get(`/v1/owner/restaurants/${r.id}`)
+			const mineA = await http
+				.get("/v1/restaurants/mine")
 				.set("Authorization", a.auth)
 				.expect(200);
-			for (const id of [r.id, "not-an-id", MISSING_ID]) {
+			expect(mineA.body.items.map((x: { id: string }) => x.id)).toEqual([r.id]);
+			const mineB = await http
+				.get("/v1/restaurants/mine")
+				.set("Authorization", b.auth)
+				.expect(200);
+			expect(mineB.body).toEqual({ items: [], total: 0 });
+			await http.get(`/v1/restaurants/${r.slug}`).expect(200);
+		});
+
+		it("is not mistaken for a slug: mine needs the restaurant role", async () => {
+			const { http, authHeader } = getE2eApp();
+			await http.get("/v1/restaurants/mine").expect(401);
+			await http
+				.get("/v1/restaurants/mine")
+				.set("Authorization", authHeader(AuthRole.User))
+				.expect(403);
+		});
+
+		it("returns 404 for a malformed or unknown id on update, status and delete", async () => {
+			const { http } = getE2eApp();
+			const { auth } = await owner();
+			for (const id of ["not-an-id", MISSING_ID]) {
 				await http
-					.get(`/v1/owner/restaurants/${id}`)
-					.set("Authorization", b.auth)
+					.patch(`/v1/restaurants/${id}`)
+					.set("Authorization", auth)
+					.send({ name: "x" })
+					.expect(404);
+				await http
+					.patch(`/v1/restaurants/${id}/status`)
+					.set("Authorization", auth)
+					.send({ status: "offline" })
+					.expect(404);
+				await http
+					.delete(`/v1/restaurants/${id}`)
+					.set("Authorization", auth)
 					.expect(404);
 			}
 		});
@@ -217,7 +248,7 @@ describe("owner restaurants", () => {
 			const { auth } = await owner();
 			const r = await create(auth);
 			const res = await http
-				.patch(`/v1/owner/restaurants/${r.id}`)
+				.patch(`/v1/restaurants/${r.id}`)
 				.set("Authorization", auth)
 				.send({ name: "Spice Palace", cuisines: ["Thai"], isPureVeg: true })
 				.expect(200);
@@ -234,7 +265,7 @@ describe("owner restaurants", () => {
 			const { auth } = await owner();
 			const r = await create(auth);
 			const res = await http
-				.patch(`/v1/owner/restaurants/${r.id}`)
+				.patch(`/v1/restaurants/${r.id}`)
 				.set("Authorization", auth)
 				.send({ address: { city: "Mysuru", phoneNumber: "9876543210" } })
 				.expect(200);
@@ -253,14 +284,14 @@ describe("owner restaurants", () => {
 			expect(item.location.coordinates).toEqual([77.5946, 12.9716]);
 
 			await http
-				.patch(`/v1/owner/restaurants/${r.id}`)
+				.patch(`/v1/restaurants/${r.id}`)
 				.set("Authorization", auth)
 				.send({ coordinates: [72.8777, 19.076] })
 				.expect(200);
 
 			const moved = await app
 				.get(MenuItemRepository)
-				.findById(user.id, item.id);
+				.findInRestaurant(user.id, r.id, item.id);
 			expect(moved?.location.coordinates).toEqual([72.8777, 19.076]);
 		});
 
@@ -274,7 +305,7 @@ describe("owner restaurants", () => {
 			const { auth } = await owner();
 			const r = await create(auth);
 			await getE2eApp()
-				.http.patch(`/v1/owner/restaurants/${r.id}`)
+				.http.patch(`/v1/restaurants/${r.id}`)
 				.set("Authorization", auth)
 				.send(body)
 				.expect(400);
@@ -285,13 +316,13 @@ describe("owner restaurants", () => {
 			const { auth } = await owner();
 			const r = await create(auth);
 			const off = await http
-				.patch(`/v1/owner/restaurants/${r.id}/status`)
+				.patch(`/v1/restaurants/${r.id}/status`)
 				.set("Authorization", auth)
 				.send({ status: "offline" })
 				.expect(200);
 			expect(off.body.status).toBe("offline");
 			await http
-				.patch(`/v1/owner/restaurants/${r.id}/status`)
+				.patch(`/v1/restaurants/${r.id}/status`)
 				.set("Authorization", auth)
 				.send({ status: "closed" })
 				.expect(400);
@@ -303,19 +334,19 @@ describe("owner restaurants", () => {
 			const b = await owner();
 			const r = await create(a.auth);
 			await http
-				.patch(`/v1/owner/restaurants/${r.id}`)
+				.patch(`/v1/restaurants/${r.id}`)
 				.set("Authorization", b.auth)
 				.send({ name: "Hijacked" })
 				.expect(404);
 			await http
-				.patch(`/v1/owner/restaurants/${r.id}/status`)
+				.patch(`/v1/restaurants/${r.id}/status`)
 				.set("Authorization", b.auth)
 				.send({ status: "offline" })
 				.expect(404);
 			const still = await http
-				.get(`/v1/owner/restaurants/${r.id}`)
+				.get("/v1/restaurants/mine")
 				.set("Authorization", a.auth);
-			expect(still.body.name).toBe("Spice Hub");
+			expect(still.body.items[0].name).toBe("Spice Hub");
 		});
 	});
 
@@ -328,17 +359,19 @@ describe("owner restaurants", () => {
 			const addressId = r.address.id as string;
 
 			await http
-				.delete(`/v1/owner/restaurants/${r.id}`)
+				.delete(`/v1/restaurants/${r.id}`)
 				.set("Authorization", auth)
 				.expect(204);
 
-			await http
-				.get(`/v1/owner/restaurants/${r.id}`)
-				.set("Authorization", auth)
-				.expect(404);
+			const mine = await http
+				.get("/v1/restaurants/mine")
+				.set("Authorization", auth);
+			expect(mine.body.total).toBe(0);
 			await http.get(`/v1/restaurants/${r.slug}`).expect(404);
 			expect(
-				await app.get(MenuItemRepository).findById(user.id, item.id),
+				await app
+					.get(MenuItemRepository)
+					.findInRestaurant(user.id, r.id, item.id),
 			).toBeNull();
 			expect(await app.get(AddressRepository).findById(addressId)).toBeNull();
 		});
@@ -349,15 +382,15 @@ describe("owner restaurants", () => {
 			const b = await owner();
 			const r = await create(a.auth);
 			await http
-				.delete(`/v1/owner/restaurants/${r.id}`)
+				.delete(`/v1/restaurants/${r.id}`)
 				.set("Authorization", b.auth)
 				.expect(404);
+			const mine = await http
+				.get("/v1/restaurants/mine")
+				.set("Authorization", a.auth);
+			expect(mine.body.total).toBe(1);
 			await http
-				.get(`/v1/owner/restaurants/${r.id}`)
-				.set("Authorization", a.auth)
-				.expect(200);
-			await http
-				.delete(`/v1/owner/restaurants/not-an-id`)
+				.delete(`/v1/restaurants/not-an-id`)
 				.set("Authorization", a.auth)
 				.expect(404);
 		});

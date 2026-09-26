@@ -8,7 +8,6 @@ import { FoodType } from "@/domain/enums/food-type";
 import type { TCreateMenuItemInput } from "@/domain/types/menu-item.types";
 import type { TCreateRestaurantInput } from "@/domain/types/restaurant.types";
 import { UserRepository } from "@/repositories/user.repository";
-import { MenuItemService } from "@/services/menu-item.service";
 import { RestaurantService } from "@/services/restaurant.service";
 import type { TMenuItem } from "@db/schemas/menu-item.schema";
 import type { TRestaurant } from "@db/schemas/restaurant.schema";
@@ -51,7 +50,7 @@ export type TE2eApp = {
 	seedMenuItem: (
 		ownerId: string,
 		restaurantId: string,
-		overrides?: Partial<Omit<TCreateMenuItemInput, "restaurantId">>,
+		overrides?: Partial<TCreateMenuItemInput>,
 	) => Promise<TMenuItem>;
 	/** Drops every collection, clears cache/rate-limit keys, resets the fakes. */
 	reset: () => Promise<void>;
@@ -152,8 +151,7 @@ export async function startE2eApp(): Promise<TE2eApp> {
 				...overrides,
 			}),
 		seedMenuItem: (ownerId, restaurantId, overrides = {}) =>
-			app.get(MenuItemService).create(ownerId, {
-				restaurantId,
+			app.get(RestaurantService).createMenuItem(ownerId, restaurantId, {
 				name: "Paneer Tikka",
 				category: "Starters",
 				priceInPaise: 24900,

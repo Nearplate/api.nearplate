@@ -1,4 +1,9 @@
 import { LogClass } from "@/app/modules/logger";
+import type {
+	TCreateMenuItemInput,
+	TListMenuItemsInput,
+	TUpdateMenuItemInput,
+} from "@/domain/types/menu-item.types";
 import type { RestaurantStatus } from "@/domain/enums/restaurant-status";
 import type { ICRUDService, TPage } from "@/domain/interfaces/crud.interface";
 import type {
@@ -15,12 +20,13 @@ import {
 	type TNearbyRestaurant,
 } from "@/repositories/restaurant.repository";
 import type { TGeoPoint } from "@db/schemas/geo";
+import type { TMenuItem } from "@db/schemas/menu-item.schema";
 import type { TRestaurant } from "@db/schemas/restaurant.schema";
 import { Inject, Injectable, Logger, NotFoundException } from "@nestjs/common";
 
 /**
- * Restaurant business logic. A restaurant that is missing or not the caller's
- * is a 404. MongoDB transactions are not assumed (a standalone server has
+ * Restaurant and menu business logic. A restaurant or menu item that is
+ * missing, not the caller's, or under a different restaurant is a 404. MongoDB transactions are not assumed (a standalone server has
  * none), so multi-collection writes are ordered and compensated instead.
  */
 @LogClass()
@@ -158,6 +164,101 @@ export class RestaurantService implements ICRUDService<
 	/** Public search: online restaurants near a point, nearest first. */
 	public nearby(input: TNearbyRestaurantsInput): Promise<TNearbyRestaurant[]> {
 		return this._restaurantRepository.nearby(input);
+	}
+
+	/**
+	 * Creates an item on the caller's own restaurant (404 if it is missing or
+	 * someone else's) and copies the restaurant's location onto it.
+	 */
+	public async createMenuItem(
+		ownerId: string,
+		restaurantId: string,
+		input: TCreateMenuItemInput,
+	): Promise<TMenuItem> {
+		const restaurant = await this.get(ownerId, restaurantId);
+		return this._menuItemRepository.create(ownerId, {
+			...input,
+			restaurantId: restaurant.id,
+			location: restaurant.location,
+		});
+	}
+
+	/** The restaurant's items for its owner; 404 if the restaurant is not theirs. */
+	public async listMenuItems(
+		ownerId: string,
+		restaurantId: string,
+		query: TListMenuItemsInput,
+	): Promise<TPage<TMenuItem>> {
+		await this.get(ownerId, restaurantId);
+		return this._menuItemRepository.list(ownerId, restaurantId, query);
+	}
+
+	/** One item of the caller's restaurant, or 404. */
+	public async getMenuItem(
+		ownerId: string,
+		restaurantId: string,
+		itemId: string,
+	): Promise<TMenuItem> {
+		const item = await this._menuItemRepository.findInRestaurant(
+			ownerId,
+			restaurantId,
+			itemId,
+		);
+		if (!item) {
+			throw new NotFoundException();
+		}
+		return item;
+	}
+
+	/** Updates one item of the caller's restaurant, or 404. */
+	public async updateMenuItem(
+		ownerId: string,
+		restaurantId: string,
+		itemId: string,
+		input: TUpdateMenuItemInput,
+	): Promise<TMenuItem> {
+		const item = await this._menuItemRepository.updateInRestaurant(
+			ownerId,
+			restaurantId,
+			itemId,
+			input,
+		);
+		if (!item) {
+			throw new NotFoundException();
+		}
+		return item;
+	}
+
+	/** Marks an item available or sold out. */
+	public setMenuItemAvailability(
+		ownerId: string,
+		restaurantId: string,
+		itemId: string,
+		isAvailable: boolean,
+	): Promise<TMenuItem> {
+		return this.updateMenuItem(ownerId, restaurantId, itemId, { isAvailable });
+	}
+
+	/** Deletes one item of the caller's restaurant, or 404. */
+	public async removeMenuItem(
+		ownerId: string,
+		restaurantId: string,
+		itemId: string,
+	): Promise<void> {
+		const deleted = await this._menuItemRepository.deleteInRestaurant(
+			ownerId,
+			restaurantId,
+			itemId,
+		);
+		if (!deleted) {
+			throw new NotFoundException();
+		}
+	}
+
+	/** Public menu of a restaurant by slug, sorted by category then name. */
+	public async getMenuBySlug(slug: string): Promise<TMenuItem[]> {
+		const restaurant = await this.getBySlug(slug);
+		return this._menuItemRepository.listByRestaurant(restaurant.id);
 	}
 
 	/** `[lng, lat]` → GeoJSON Point. */
