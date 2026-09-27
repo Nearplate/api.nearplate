@@ -107,6 +107,7 @@ export function buildWinstonOptions({
 				replaceTimestamp: true,
 				format: format.combine(...common, format.json()),
 				onConnectionError: (err) => {
+					// eslint-disable-next-line no-console
 					console.error("[loki] connection error", err);
 				},
 			}),
