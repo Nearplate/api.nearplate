@@ -15,7 +15,7 @@ RUN npm run build
 # --- prod-deps: runtime dependencies only ---
 FROM base AS prod-deps
 COPY package.json package-lock.json ./
-RUN npm ci --omit=dev && npm cache clean --force
+RUN npm ci --omit=dev --ignore-scripts && npm cache clean --force
 
 # --- runtime ---
 FROM base AS runtime
