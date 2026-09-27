@@ -22,7 +22,8 @@ const _magicLinkSchema = z
 	.object({ email: _email, role: _signupRole })
 	.strict();
 const _verifySchema = z.object({ token: _token }).strict();
-const _googleSchema = z.object({ idToken: _token, role: _signupRole }).strict();
+const _startGoogleSchema = z.object({ role: _signupRole }).strict();
+const _verifyGoogleSchema = z.object({ code: _token, state: _token }).strict();
 const _refreshSchema = z.object({ refreshToken: _token }).strict();
 export type TTokensResponse = TAuthTokens;
 export type TAuthResultResponse =
@@ -53,16 +54,18 @@ export class AuthTransformer {
 		return parseOrBadRequest(_verifySchema, body);
 	}
 
-	/** Body → Google login input. */
-	public toGoogleRequestDTO(body: unknown): {
-		idToken: string;
-		role?: TSignupRole;
+	/** Query → start-Google input. */
+	public toStartGoogleRequestDTO(query: unknown): { role?: TSignupRole } {
+		const data = parseOrBadRequest(_startGoogleSchema, query);
+		return data.role ? { role: data.role } : {};
+	}
+
+	/** Body → verify-Google input. */
+	public toVerifyGoogleRequestDTO(body: unknown): {
+		code: string;
+		state: string;
 	} {
-		const data = parseOrBadRequest(_googleSchema, body);
-		return {
-			idToken: data.idToken,
-			...(data.role ? { role: data.role } : {}),
-		};
+		return parseOrBadRequest(_verifyGoogleSchema, body);
 	}
 
 	/** Login result → wire DTO. */

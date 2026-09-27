@@ -1,4 +1,4 @@
-import { GoogleAuthAdapter } from "@/adapters/google-auth.adapter";
+import { GoogleOauthAdapter } from "@/adapters/google-oauth.adapter";
 import { JwtAdapter } from "@/adapters/jwt.adapter";
 import { RedisCacheAdapter } from "@/adapters/redis-cache.adapter";
 import { ResendAdapter } from "@/adapters/resend.adapter";
@@ -8,5 +8,5 @@ export const Adapters: Provider[] = [
 	JwtAdapter,
 	RedisCacheAdapter,
 	ResendAdapter,
-	GoogleAuthAdapter,
+	GoogleOauthAdapter,
 ];

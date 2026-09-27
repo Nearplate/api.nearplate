@@ -1,4 +1,4 @@
-import { GoogleAuthAdapter } from "@/adapters/google-auth.adapter";
+import { GoogleOauthAdapter } from "@/adapters/google-oauth.adapter";
 import { JwtAdapter } from "@/adapters/jwt.adapter";
 import { RedisCacheAdapter } from "@/adapters/redis-cache.adapter";
 import { ResendAdapter } from "@/adapters/resend.adapter";
@@ -18,11 +18,10 @@ import {
 	HttpStatus,
 	Inject,
 	Injectable,
-	NotImplementedException,
 	UnauthorizedException,
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
-import { randomUUID } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 
 const _SECONDS_PER_MINUTE = 60;
 const _RATE_LIMIT_WINDOW_SECONDS = 3600;
@@ -53,6 +52,7 @@ export class AuthService {
 	private readonly _magicLinkMaxPerHour: number;
 	private readonly _webAppBaseUrl: string;
 	private readonly _webAppMagicPath: string;
+	private readonly _oauthStateTtlSeconds: number;
 
 	constructor(
 		@Inject(UserRepository)
@@ -67,8 +67,8 @@ export class AuthService {
 		private readonly _backgroundJobHelper: BackgroundJobHelper,
 		@Inject(ResendAdapter)
 		private readonly _resendAdapter: ResendAdapter,
-		@Inject(GoogleAuthAdapter)
-		private readonly _googleAuthAdapter: GoogleAuthAdapter,
+		@Inject(GoogleOauthAdapter)
+		private readonly _googleOauthAdapter: GoogleOauthAdapter,
 		@Inject(JwtAdapter)
 		private readonly _jwtAdapter: JwtAdapter,
 		@Inject(RedisCacheAdapter)
@@ -85,6 +85,9 @@ export class AuthService {
 		this._webAppBaseUrl = this._configService.getOrThrow("WEB_APP_BASE_URL");
 		this._webAppMagicPath =
 			this._configService.getOrThrow("WEB_APP_MAGIC_PATH");
+		this._oauthStateTtlSeconds = this._configService.getOrThrow(
+			"OAUTH_STATE_TTL_SECONDS",
+		);
 	}
 
 	/**
@@ -114,6 +117,7 @@ export class AuthService {
 			email,
 			purpose: AUTH_TOKEN_PURPOSES.MagicLink,
 			intendedRole: role ?? null,
+			codeVerifier: null,
 			expiresAt: this._sessionTokenHelper.expiresAt(this._magicLinkTtlSeconds),
 		});
 		const url = this._magicLinkUrl(token);
@@ -134,7 +138,7 @@ export class AuthService {
 			this._sessionTokenHelper.hash(token),
 			AUTH_TOKEN_PURPOSES.MagicLink,
 		);
-		if (!burned) {
+		if (!burned?.email) {
 			throw new UnauthorizedException();
 		}
 		return this._signIn(
@@ -145,20 +149,49 @@ export class AuthService {
 	}
 
 	/**
-	 * Signs in with a Google ID token from the client. 501 when Google is not
-	 * configured, 401 for an invalid token or an unverified Google email.
-	 * Linking to an existing account by email is safe only because
-	 * `email_verified` is required.
+	 * Starts the redirect flow: stores a PKCE verifier under a one-time `state`
+	 * (the same `auth_tokens` collection as magic-link, distinguished by
+	 * `purpose`) and returns the Google URL to send the browser to.
 	 */
-	public async loginWithGoogle(
-		idToken: string,
-		role: TSignupRole | undefined,
+	public async authorizeGoogleUrl(role?: TSignupRole): Promise<string> {
+		const { token: state, tokenHash } = this._sessionTokenHelper.generate();
+		const codeVerifier = randomBytes(32).toString("base64url");
+		const codeChallenge = createHash("sha256")
+			.update(codeVerifier)
+			.digest("base64url");
+		await this._authTokenRepository.create({
+			tokenHash,
+			email: null,
+			purpose: AUTH_TOKEN_PURPOSES.OauthState,
+			intendedRole: role ?? null,
+			codeVerifier,
+			expiresAt: this._sessionTokenHelper.expiresAt(this._oauthStateTtlSeconds),
+		});
+		return this._googleOauthAdapter.authorizeUrl(state, codeChallenge);
+	}
+
+	/**
+	 * Spends the `state` (401 if unknown, expired or reused), exchanges `code`
+	 * for Google's claims using the matching PKCE verifier, and signs in. 401
+	 * for an unverified Google email. Linking to an existing account by email
+	 * is safe only because `email_verified` is required.
+	 */
+	public async verifyGoogle(
+		code: string,
+		state: string,
 		context: TClientContext,
 	): Promise<TAuthResult> {
-		if (!this._googleAuthAdapter.isConfigured()) {
-			throw new NotImplementedException();
+		const burned = await this._authTokenRepository.consumeByHash(
+			this._sessionTokenHelper.hash(state),
+			AUTH_TOKEN_PURPOSES.OauthState,
+		);
+		if (!burned?.codeVerifier) {
+			throw new UnauthorizedException();
 		}
-		const claims = await this._googleAuthAdapter.verifyIdToken(idToken);
+		const claims = await this._googleOauthAdapter.exchangeCode(
+			code,
+			burned.codeVerifier,
+		);
 		if (!claims.email_verified) {
 			throw new UnauthorizedException();
 		}
@@ -169,7 +202,7 @@ export class AuthService {
 				...this._splitName(claims),
 				avatarUrl: claims.picture ?? null,
 			},
-			role,
+			this._toSignupRole(burned.intendedRole),
 			context,
 		);
 	}

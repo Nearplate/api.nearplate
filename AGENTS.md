@@ -14,7 +14,7 @@ Guidance for AI coding agents (Claude Code, Cursor, Codex, …) working in this 
 - `@nestjs/schedule` for cron (`src/subscribers/`)
 - Zod for request validation and env config
 - JWT access tokens, one secret per role: `admin`, `restaurant`, `user`, `guest`; opaque rotating refresh tokens
-- Sign-in: magic link emailed via Resend (`ResendAdapter`, plain `fetch`) and Google ID-token verification (`GoogleAuthAdapter`)
+- Sign-in: magic link emailed via Resend (`ResendAdapter`, plain `fetch`) and Google via Authorization Code + PKCE (`GoogleOauthAdapter`)
 - Winston logging (`@LogClass()`, trace ids, optional Loki)
 - ESLint (flat config) + Prettier (tabs, 80 columns, double quotes, trailing commas)
 - npm (Node >= 22)
@@ -28,7 +28,7 @@ Guidance for AI coding agents (Claude Code, Cursor, Codex, …) working in this 
 
 ```bash
 npm install
-npm run start:dev       # dev server (default :3000)
+npm run start:dev       # dev server (default :8080)
 npm run build           # compile
 npm run lint            # eslint --fix      (lint:check in CI)
 npm run format          # prettier --write  (format:check in CI)
@@ -105,7 +105,7 @@ New Mongoose models go in `db/models.ts` (`Models`).
 
 - **Roles**: `admin`, `restaurant`, `user` (stored in `users`, one account per email, one role) and `guest` (anonymous signed token, no row). One JWT secret per role; `admin` is **never** assignable through the API — set it in the database.
 - **Magic link**: `POST /v1/auth/magic-link {email, role?}` → emailed link to the **web app** (`WEB_APP_BASE_URL` + `WEB_APP_MAGIC_PATH`) → web app POSTs the token to `POST /v1/auth/magic-link/verify`. No `RESEND_API_KEY` in development = the link is logged; **required in production** (config fails to boot without it).
-- **Google**: `POST /v1/auth/google {idToken, role?}` (the client gets the ID token; API verifies it against `GOOGLE_CLIENT_IDS`; unset = 501).
+- **Google**: `GET /v1/auth/google?role=` 302s to Google with a PKCE `code_challenge`; the web app posts the result to `POST /v1/auth/google/verify {code, state}`, which burns the one-time `state` (an `oauth_state` row in `auth_tokens`), exchanges the code via `GoogleOauthAdapter`, and verifies the returned ID token against `GOOGLE_CLIENT_ID` (required at boot, along with `GOOGLE_CLIENT_SECRET` and `GOOGLE_REDIRECT_URI`).
 - **Sessions**: short-lived access JWT + rotating opaque refresh token (`POST /v1/auth/refresh`, `POST /v1/auth/logout`); `GET/PATCH /v1/users/me`, `POST /v1/users/me/onboard`; `POST /v1/auth/guest`.
 - Login results carry a `status` in the 200 body (`authenticated` | `role_mismatch` | `sent`) because error bodies are bare `{ statusCode }`. Sign-up `role` (`user` | `restaurant`) applies only to new accounts; an existing account with another role returns `role_mismatch`.
 - `@Roles(AuthRole.User, ...)` applies `AccessTokenGuard` (put it on the **class** when every route needs the same roles, e.g. the owner controllers): 401 = no/invalid/expired token, 403 = valid token but role not allowed. Read the caller with `@AuthUser()` → `{ id, role }` (`id` = JWT `sub`). Never take user/owner ids from the request.
@@ -122,14 +122,14 @@ New Mongoose models go in `db/models.ts` (`Models`).
 
 ## Testing
 
-Tests are e2e only (`test/e2e/`); no unit tests under `src/`. A behavior change is incomplete until the matching spec under `test/e2e/specs/` changes with it. The suite uses the `api_nearplate_test` database and a Redis on host port 6380. Email (Resend) and Google are always faked in the harness (`test/e2e/helpers/fakes/`); use `seedUser()` for existing accounts and `seedRestaurant()` / `seedMenuItem()` for domain data. The harness waits for index builds (`model.init()`) so `$geoNear` and the unique slug index exist before tests run.
+Tests are e2e only (`test/e2e/`); no unit tests under `src/`. A behavior change is incomplete until the matching spec under `test/e2e/specs/` changes with it. The suite uses the `api_nearplate_test` database and a Redis on host port 6380. Email (Resend) and Google (`FakeGoogleOauthAdapter`) are always faked in the harness (`test/e2e/helpers/fakes/`); use `seedUser()` for existing accounts and `seedRestaurant()` / `seedMenuItem()` for domain data. The harness waits for index builds (`model.init()`) so `$geoNear` and the unique slug index exist before tests run.
 
 ## Conventions
 
 - JSDoc on every method; `@LogClass()` on controllers, services, repositories, adapters.
 - Money in integer paise; coordinates are `[lng, lat]`; query-string numbers are parsed with the string→Number pipe (never `z.coerce.number()`, where `Number("")` is 0).
 - `T` prefix for types, `I` prefix for interfaces (ports), `_` prefix for private members, kebab-case files with layer suffix.
-- **Injected dependencies are named after their class**: `_` + the class name in camelCase, e.g. `@Inject(BackgroundJobHelper) private readonly _backgroundJobHelper: BackgroundJobHelper`, `_resendAdapter`, `_googleAuthAdapter`, `_redisCacheAdapter`, `_authTokenRepository`, `_authTransformer`. No shortened names (`_resend`, `_redis`, `_service`). Exception: Mongoose `@InjectModel` fields are `_model` and `@InjectConnection` is `_connection`.
+- **Injected dependencies are named after their class**: `_` + the class name in camelCase, e.g. `@Inject(BackgroundJobHelper) private readonly _backgroundJobHelper: BackgroundJobHelper`, `_resendAdapter`, `_googleOauthAdapter`, `_redisCacheAdapter`, `_authTokenRepository`, `_authTransformer`. No shortened names (`_resend`, `_redis`, `_service`). Exception: Mongoose `@InjectModel` fields are `_model` and `@InjectConnection` is `_connection`.
 - Immutability: return new objects, do not mutate inputs.
 
 ## Scope

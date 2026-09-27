@@ -24,7 +24,7 @@ npm run start:dev
 
 ```bash
 cp .env.example .env
-docker compose up -d --build     # API on :3000 with its own MongoDB + Redis
+docker compose up -d --build     # API on :8080 with its own MongoDB + Redis
 docker compose logs -f api
 docker compose down              # add -v to also drop the MongoDB volume
 ```
@@ -99,19 +99,19 @@ All routes are under `/v1`, except `GET /` and `GET /health`. Errors are a bare 
 Without `RESEND_API_KEY` (development) the magic link is printed in the API log instead of emailed:
 
 ```bash
-curl -s -X POST localhost:3000/v1/auth/magic-link -H 'Content-Type: application/json' \
+curl -s -X POST localhost:8080/v1/auth/magic-link -H 'Content-Type: application/json' \
   -d '{"email":"you@example.com"}'
 # copy the token from the logged link (…/auth/magic?token=TOKEN), then:
-curl -s -X POST localhost:3000/v1/auth/magic-link/verify -H 'Content-Type: application/json' \
+curl -s -X POST localhost:8080/v1/auth/magic-link/verify -H 'Content-Type: application/json' \
   -d '{"token":"TOKEN"}'
-curl -s localhost:3000/v1/users/me -H "Authorization: Bearer ACCESS_TOKEN"
+curl -s localhost:8080/v1/users/me -H "Authorization: Bearer ACCESS_TOKEN"
 ```
 
 ### Configuration
 
-| Variable                                          | Purpose                                                                                                                                   |
-| ------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| `RESEND_API_KEY`, `RESEND_FROM_EMAIL`             | Magic-link email. The key is **required in production** (the Docker stack runs in production mode). Verify your sending domain in Resend. |
-| `GOOGLE_CLIENT_IDS`                               | Comma-separated OAuth client ids (web/iOS/Android) accepted as the ID token audience. Unset → `/v1/auth/google` returns 501.              |
-| `WEB_APP_BASE_URL`, `WEB_APP_MAGIC_PATH`          | Where the emailed link points (the web app, not this API).                                                                                |
-| `JWT_{ADMIN,RESTAURANT,USER,GUEST}_ACCESS_SECRET` | One signing secret per role.                                                                                                              |
+| Variable                                                          | Purpose                                                                                                                                            |
+| ----------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `RESEND_API_KEY`, `RESEND_FROM_EMAIL`                             | Magic-link email. The key is **required in production** (the Docker stack runs in production mode). Verify your sending domain in Resend.          |
+| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI` | Required. The OAuth web client used for the Authorization Code + PKCE flow (`GET /v1/auth/google` → Google → the web app's `GOOGLE_REDIRECT_URI`). |
+| `WEB_APP_BASE_URL`, `WEB_APP_MAGIC_PATH`                          | Where the emailed link points (the web app, not this API).                                                                                         |
+| `JWT_{ADMIN,RESTAURANT,USER,GUEST}_ACCESS_SECRET`                 | One signing secret per role.                                                                                                                       |

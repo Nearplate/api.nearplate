@@ -124,6 +124,7 @@ describe("magic link", () => {
 			email: "late@example.com",
 			purpose: AUTH_TOKEN_PURPOSES.MagicLink,
 			intendedRole: null,
+			codeVerifier: null,
 			expiresAt: new Date(Date.now() - 1000),
 		});
 		await verify(token).expect(401);

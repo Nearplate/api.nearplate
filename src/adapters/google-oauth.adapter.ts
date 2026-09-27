@@ -7,6 +7,8 @@ import { createPublicKey } from "node:crypto";
 import { z } from "zod";
 
 const _JWKS_URL = "https://www.googleapis.com/oauth2/v3/certs";
+const _AUTHORIZE_URL = "https://accounts.google.com/o/oauth2/v2/auth";
+const _TOKEN_URL = "https://oauth2.googleapis.com/token";
 const _ISSUERS: [string, string] = [
 	"https://accounts.google.com",
 	"accounts.google.com",
@@ -25,40 +27,95 @@ const _claimsSchema = z.object({
 export type TGoogleClaims = z.infer<typeof _claimsSchema>;
 
 type TJwk = { kid: string; n: string; e: string; kty: string };
+type TTokenResponse = { id_token?: string };
 
 /**
- * Verifies Google ID tokens sent by the client (Google Identity Services or
- * native sign-in). No code exchange, client secret or `googleapis` dependency:
- * an ID token is a signed JWT, so this fetches Google's public keys and checks
- * signature, issuer, audience and expiry.
+ * Google OAuth via the Authorization Code + PKCE flow -- no `googleapis`
+ * dependency: two `fetch` calls (authorize URL is built locally, code
+ * exchange is a POST) plus manual ID-token verification against Google's
+ * JWKS (signature, issuer, audience, expiry).
  */
 @LogClass()
 @Injectable()
-export class GoogleAuthAdapter {
-	private readonly _clientIds: string[];
+export class GoogleOauthAdapter {
+	private readonly _clientId: string;
+	private readonly _clientSecret: string;
+	private readonly _redirectUri: string;
 	private _keyCache = new Map<string, string>();
 
 	constructor(
 		@Inject(ConfigService)
 		private readonly _configService: ConfigService<TConfig>,
 	) {
-		this._clientIds = this._configService.getOrThrow("GOOGLE_CLIENT_IDS");
+		this._clientId = this._configService.getOrThrow("GOOGLE_CLIENT_ID");
+		this._clientSecret = this._configService.getOrThrow("GOOGLE_CLIENT_SECRET");
+		this._redirectUri = this._configService.getOrThrow("GOOGLE_REDIRECT_URI");
 	}
 
-	/** False when no `GOOGLE_CLIENT_IDS` are configured. */
-	public isConfigured(): boolean {
-		return this._clientIds.length > 0;
+	/**
+	 * Builds the URL to send the browser to. `state` binds the round trip to
+	 * this login attempt (CSRF); `codeChallenge` is the S256 PKCE challenge for
+	 * `codeVerifier`, so only the party that started the flow can redeem the
+	 * code Google hands back.
+	 */
+	public authorizeUrl(state: string, codeChallenge: string): string {
+		const params = new URLSearchParams({
+			client_id: this._clientId,
+			redirect_uri: this._redirectUri,
+			response_type: "code",
+			scope: "openid email profile",
+			state,
+			code_challenge: codeChallenge,
+			code_challenge_method: "S256",
+			access_type: "online",
+			prompt: "select_account",
+		});
+		return `${_AUTHORIZE_URL}?${params.toString()}`;
 	}
 
-	/** Returns the verified claims, or throws 401. */
-	public async verifyIdToken(idToken: string): Promise<TGoogleClaims> {
+	/** Exchanges the authorization code for an ID token and verifies it. */
+	public async exchangeCode(
+		code: string,
+		codeVerifier: string,
+	): Promise<TGoogleClaims> {
+		const body = new URLSearchParams({
+			code,
+			client_id: this._clientId,
+			client_secret: this._clientSecret,
+			redirect_uri: this._redirectUri,
+			grant_type: "authorization_code",
+			code_verifier: codeVerifier,
+		});
+		let response: Response;
+		try {
+			response = await fetch(_TOKEN_URL, {
+				method: "POST",
+				headers: { "Content-Type": "application/x-www-form-urlencoded" },
+				body: body.toString(),
+				signal: AbortSignal.timeout(_FETCH_TIMEOUT_MS),
+			});
+		} catch {
+			throw new UnauthorizedException();
+		}
+		if (!response.ok) {
+			throw new UnauthorizedException();
+		}
+		const { id_token: idToken } = (await response.json()) as TTokenResponse;
+		if (!idToken) {
+			throw new UnauthorizedException();
+		}
+		return this._verifyIdToken(idToken);
+	}
+
+	/** Verifies signature, issuer, audience and expiry; returns the claims. */
+	private async _verifyIdToken(idToken: string): Promise<TGoogleClaims> {
 		const kid = this._keyId(idToken);
 		const key = await this._publicKey(kid);
 		let payload: unknown;
 		try {
 			payload = verify(idToken, key, {
 				algorithms: ["RS256"],
-				audience: this._clientIds as [string, ...string[]],
+				audience: this._clientId,
 				issuer: _ISSUERS,
 			});
 		} catch {

@@ -1,4 +1,4 @@
-import { GoogleAuthAdapter } from "@/adapters/google-auth.adapter";
+import { GoogleOauthAdapter } from "@/adapters/google-oauth.adapter";
 import { JwtAdapter } from "@/adapters/jwt.adapter";
 import { ResendAdapter } from "@/adapters/resend.adapter";
 import { AppModule } from "@/app/app.module";
@@ -19,7 +19,7 @@ import Redis from "ioredis";
 import type { Connection } from "mongoose";
 import { randomUUID } from "node:crypto";
 import request from "supertest";
-import { FakeGoogleAuthAdapter } from "./fakes/google-auth.adapter.fake";
+import { FakeGoogleOauthAdapter } from "./fakes/google-oauth.adapter.fake";
 import { FakeResendAdapter } from "./fakes/resend.adapter.fake";
 
 const _REDIS_KEY_PATTERNS = ["dbcache:*", "ratelimit:*"];
@@ -31,7 +31,7 @@ export type TE2eApp = {
 	http: ReturnType<typeof request>;
 	jwt: JwtAdapter;
 	resend: FakeResendAdapter;
-	google: FakeGoogleAuthAdapter;
+	google: FakeGoogleOauthAdapter;
 	/** `Authorization` header value for a freshly signed token. */
 	authHeader: (role: AuthRole, sub?: string) => string;
 	/** Inserts a verified user and returns it with a valid access token. */
@@ -90,13 +90,13 @@ export async function startE2eApp(): Promise<TE2eApp> {
 	}
 
 	const resend = new FakeResendAdapter();
-	const google = new FakeGoogleAuthAdapter();
+	const google = new FakeGoogleOauthAdapter();
 	const moduleRef = await Test.createTestingModule({
 		imports: [AppModule],
 	})
 		.overrideProvider(ResendAdapter)
 		.useValue(resend)
-		.overrideProvider(GoogleAuthAdapter)
+		.overrideProvider(GoogleOauthAdapter)
 		.useValue(google)
 		.compile();
 

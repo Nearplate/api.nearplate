@@ -35,7 +35,7 @@ test/e2e/
 - Database is always `api_nearplate_test` (`global-setup.cjs` refuses names that do not end in `_test`).
 - Test Redis is published on host port **6380** so it never touches a developer's own Redis on 6379.
 - Force `NODE_ENV=development` (schema has no `test` value).
-- Email and Google are always faked: `FakeResendAdapter` captures links (`waitForLink`, `tokenOf`), `FakeGoogleAuthAdapter` maps test strings to claims (`register`). Never call the real vendors.
+- Email and Google are always faked: `FakeResendAdapter` captures links (`waitForLink`, `tokenOf`), `FakeGoogleOauthAdapter` maps test `code` strings to claims (`register`) and drives the redirect flow's `authorizeUrl`/`exchangeCode`. Never call the real vendors.
 - Use `seedUser({ role, email, firstName, lastName })` for an existing account with a valid access token, and `seedRestaurant(ownerId, overrides?)` / `seedMenuItem(ownerId, restaurantId, overrides?)` for domain data. `reset()` also clears the `ratelimit:*` keys and the fakes.
 - The harness applies `configureApp` (so routes are under `/v1`) and awaits `model.init()` for every model so indexes (unique slug, 2dsphere) exist before the first test.
 - `MAGIC_LINK_MAX_PER_EMAIL_PER_HOUR=3` in tests so the 429 path is cheap to hit.

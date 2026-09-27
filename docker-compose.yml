@@ -11,33 +11,30 @@ services:
     env_file: .env
     environment:
       NODE_ENV: production
-      MONGODB_URI: mongodb://mongo:27017/api_nearplate
-      REDIS_HOST: redis
-      REDIS_PORT: "6379"
     ports:
-      - "${SERVER_APP_HTTP_PORT:-3000}:${SERVER_APP_HTTP_PORT:-3000}"
+      - "${SERVER_APP_HTTP_PORT:-8080}:${SERVER_APP_HTTP_PORT:-8080}"
     networks:
       - api_nearplate_net
     depends_on:
-      mongo:
-        condition: service_healthy
+      # mongo:
+      #   condition: service_healthy
       redis:
         condition: service_healthy
 
-  mongo:
-    image: mongo:7
-    restart: unless-stopped
-    container_name: api_nearplate_mongo
-    volumes:
-      - api_nearplate_mongo_data:/data/db
-    networks:
-      - api_nearplate_net
-    healthcheck:
-      test:
-        ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
-      interval: 5s
-      timeout: 5s
-      retries: 20
+  # mongo:
+  #   image: mongo:7
+  #   restart: unless-stopped
+  #   container_name: api_nearplate_mongo
+  #   volumes:
+  #     - api_nearplate_mongo_data:/data/db
+  #   networks:
+  #     - api_nearplate_net
+  #   healthcheck:
+  #     test:
+  #       ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+  #     interval: 5s
+  #     timeout: 5s
+  #     retries: 20
 
   redis:
     image: redis:7-alpine
@@ -45,6 +42,8 @@ services:
     container_name: api_nearplate_redis
     networks:
       - api_nearplate_net
+    volumes:
+      - api_nearplate_redis_data:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -52,9 +51,12 @@ services:
       retries: 20
 
 volumes:
-  api_nearplate_mongo_data:
-    name: api_nearplate_mongo_data
+  api_nearplate_redis_data:
+    name: api_nearplate_redis_data
     driver: local
+  # api_nearplate_mongo_data:
+  #   name: api_nearplate_mongo_data
+  #   driver: local
 networks:
   api_nearplate_net:
     name: api_nearplate_net

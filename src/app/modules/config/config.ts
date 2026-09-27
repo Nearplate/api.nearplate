@@ -67,23 +67,18 @@ export const AuthConfigSchema = z.object({
 	MAGIC_LINK_MAX_PER_EMAIL_PER_HOUR: _count.default(5),
 	/** Refresh-token lifetime. */
 	SESSION_TTL_SECONDS: _seconds.default(2592000), // 30 days
+	/** How long a Google OAuth `state`/PKCE verifier stays redeemable. */
+	OAUTH_STATE_TTL_SECONDS: _seconds.default(600), // 10 minutes
 });
 
 /**
- * Comma-separated OAuth client ids (web, iOS, Android) accepted as the
- * `aud` of a Google ID token. Unset = `POST /auth/google` answers 501 and the
- * rest of the API is unaffected.
+ * Google OAuth (Authorization Code + PKCE). All three are required at boot --
+ * unlike Resend, there is no reduced-functionality mode for sign-in.
  */
 export const GoogleConfigSchema = z.object({
-	GOOGLE_CLIENT_IDS: z
-		.string()
-		.optional()
-		.transform((v) =>
-			(v ?? "")
-				.split(",")
-				.map((id) => id.trim())
-				.filter(Boolean),
-		),
+	GOOGLE_CLIENT_ID: _str.min(1),
+	GOOGLE_CLIENT_SECRET: _str.min(1),
+	GOOGLE_REDIRECT_URI: _str.url(),
 });
 
 /**

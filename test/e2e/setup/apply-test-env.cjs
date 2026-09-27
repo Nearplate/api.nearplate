@@ -20,7 +20,10 @@ function applyTestEnv() {
 		MAGIC_LINK_TTL_SECONDS: "900",
 		MAGIC_LINK_MAX_PER_EMAIL_PER_HOUR: "3",
 		SESSION_TTL_SECONDS: "2592000",
-		GOOGLE_CLIENT_IDS: "e2e-client-id",
+		OAUTH_STATE_TTL_SECONDS: "600",
+		GOOGLE_CLIENT_ID: "e2e-client-id",
+		GOOGLE_CLIENT_SECRET: "e2e-client-secret",
+		GOOGLE_REDIRECT_URI: "http://localhost:3400/auth/google/callback",
 	});
 
 	delete process.env.LOKI_HOST;

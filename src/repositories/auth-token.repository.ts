@@ -12,9 +12,10 @@ import type { Model } from "mongoose";
 
 export type TCreateAuthTokenInput = {
 	tokenHash: string;
-	email: string;
+	email: string | null;
 	purpose: TAuthTokenPurpose;
 	intendedRole: TUserRole | null;
+	codeVerifier: string | null;
 	expiresAt: Date;
 };
 

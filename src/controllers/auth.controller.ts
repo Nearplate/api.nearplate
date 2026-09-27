@@ -12,10 +12,13 @@ import type { TClientContext } from "@/types/client-context";
 import {
 	Body,
 	Controller,
+	Get,
 	HttpCode,
 	HttpStatus,
 	Inject,
 	Post,
+	Query,
+	Redirect,
 } from "@nestjs/common";
 
 /** Sign-in (magic link, Google), sessions, guest tokens and the caller's profile. */
@@ -60,17 +63,28 @@ export class AuthController {
 		return this._authTransformer.toAuthResponseDTO(result);
 	}
 
-	/** Signs in with a Google ID token obtained by the client. */
-	@Post("google")
+	/** Redirects the browser to Google to start the Authorization Code + PKCE flow. */
+	@Get("google")
+	@Redirect()
+	public async startGoogle(
+		@Query() query: unknown,
+	): Promise<{ url: string; statusCode: HttpStatus }> {
+		const input = this._authTransformer.toStartGoogleRequestDTO(query);
+		const url = await this._authService.authorizeGoogleUrl(input.role);
+		return { url, statusCode: HttpStatus.FOUND };
+	}
+
+	/** Exchanges the code Google returned (posted by the web app) for a session. */
+	@Post("google/verify")
 	@HttpCode(HttpStatus.OK)
-	public async google(
+	public async verifyGoogle(
 		@Body() body: unknown,
 		@ClientContext() context: TClientContext,
 	): Promise<TAuthResultResponse> {
-		const input = this._authTransformer.toGoogleRequestDTO(body);
-		const result = await this._authService.loginWithGoogle(
-			input.idToken,
-			input.role,
+		const input = this._authTransformer.toVerifyGoogleRequestDTO(body);
+		const result = await this._authService.verifyGoogle(
+			input.code,
+			input.state,
 			context,
 		);
 		return this._authTransformer.toAuthResponseDTO(result);
