@@ -11,7 +11,7 @@ import type { Model } from "mongoose";
 export type TCreateAuthSessionInput = {
 	userId: string;
 	tokenHash: string;
-	ip: string | null;
+	deviceId: string | null;
 	userAgent: string | null;
 	expiresAt: Date;
 };
@@ -33,12 +33,21 @@ export class AuthSessionRepository {
 	}
 
 	/**
-	 * Atomically deletes and returns the live session for a refresh-token hash.
-	 * This is what makes rotation safe: a refresh token can be spent once.
+	 * Atomically deletes and returns the live session for a refresh-token hash,
+	 * scoped to the device it was issued to. This is what makes rotation safe:
+	 * a refresh token can be spent once, and only from its own device — a
+	 * mismatched or missing `deviceId` leaves the original session untouched.
 	 */
-	public async consumeByHash(tokenHash: string): Promise<TAuthSession | null> {
+	public async consumeByHash(
+		tokenHash: string,
+		deviceId: string | null,
+	): Promise<TAuthSession | null> {
 		const row = await this._model
-			.findOneAndDelete({ tokenHash, expiresAt: { $gt: new Date() } })
+			.findOneAndDelete({
+				tokenHash,
+				deviceId,
+				expiresAt: { $gt: new Date() },
+			})
 			.lean<TLeanSession>();
 		if (!row) {
 			return null;

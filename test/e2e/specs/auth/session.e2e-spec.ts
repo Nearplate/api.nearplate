@@ -1,20 +1,26 @@
 import { AuthSessionRepository } from "@/repositories/auth-session.repository";
 import { SessionTokenHelper } from "@/helpers/session-token.helper";
+import {
+	AuthSession,
+	type AuthSessionDocument,
+} from "@db/schemas/auth-session.schema";
 import { User, type UserDocument } from "@db/schemas/user.schema";
 import { getModelToken } from "@nestjs/mongoose";
 import { decode } from "jsonwebtoken";
 import type { Model } from "mongoose";
 import { getE2eApp } from "../../helpers/app.harness";
 
+const DEVICE_A = "11111111-1111-4111-8111-111111111111";
+const DEVICE_B = "22222222-2222-4222-8222-222222222222";
+
 describe("sessions and profile", () => {
-	async function signIn(email = "bob@example.com") {
+	async function signIn(email = "bob@example.com", deviceId?: string) {
 		const { http, resend } = getE2eApp();
 		await http.post("/v1/auth/magic-link").send({ email }).expect(200);
 		const token = resend.tokenOf(await resend.waitForLink(email));
-		const res = await http
-			.post("/v1/auth/magic-link/verify")
-			.send({ token })
-			.expect(200);
+		const req = http.post("/v1/auth/magic-link/verify");
+		if (deviceId) req.set("X-Device-Id", deviceId);
+		const res = await req.send({ token }).expect(200);
 		return res.body as {
 			user: { id: string };
 			accessToken: string;
@@ -22,8 +28,10 @@ describe("sessions and profile", () => {
 		};
 	}
 
-	function refresh(refreshToken: string) {
-		return getE2eApp().http.post("/v1/auth/refresh").send({ refreshToken });
+	function refresh(refreshToken: string, deviceId?: string) {
+		const req = getE2eApp().http.post("/v1/auth/refresh");
+		if (deviceId) req.set("X-Device-Id", deviceId);
+		return req.send({ refreshToken });
 	}
 
 	it("rotates the refresh token: the old one stops working", async () => {
@@ -51,7 +59,7 @@ describe("sessions and profile", () => {
 		await app.get(AuthSessionRepository).create({
 			userId: user.id,
 			tokenHash,
-			ip: null,
+			deviceId: null,
 			userAgent: null,
 			expiresAt: new Date(Date.now() - 1000),
 		});
@@ -84,5 +92,30 @@ describe("sessions and profile", () => {
 			.post("/v1/auth/logout")
 			.send({ refreshToken: session.refreshToken })
 			.expect(204);
+	});
+
+	it("stores the device id from X-Device-Id on sign-in", async () => {
+		const session = await signIn("carol@example.com", DEVICE_A);
+		const stored = await getE2eApp()
+			.app.get<Model<AuthSessionDocument>>(getModelToken(AuthSession.name))
+			.findOne({ userId: session.user.id })
+			.lean();
+		expect(stored?.deviceId).toBe(DEVICE_A);
+	});
+
+	it("rejects a refresh from a different device with 401, leaving the original session usable", async () => {
+		const session = await signIn("dave@example.com", DEVICE_A);
+		await refresh(session.refreshToken, DEVICE_B).expect(401);
+		await refresh(session.refreshToken).expect(401); // no header also mismatches
+		await refresh(session.refreshToken, DEVICE_A).expect(200);
+	});
+
+	it("stores a malformed X-Device-Id header as null", async () => {
+		const session = await signIn("erin@example.com", "not-a-uuid");
+		const stored = await getE2eApp()
+			.app.get<Model<AuthSessionDocument>>(getModelToken(AuthSession.name))
+			.findOne({ userId: session.user.id })
+			.lean();
+		expect(stored?.deviceId).toBeNull();
 	});
 });

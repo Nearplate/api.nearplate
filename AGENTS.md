@@ -111,7 +111,7 @@ New Mongoose models go in `db/models.ts` (`Models`).
 - `@Roles(AuthRole.User, ...)` applies `AccessTokenGuard` (put it on the **class** when every route needs the same roles, e.g. the owner controllers): 401 = no/invalid/expired token, 403 = valid token but role not allowed. Read the caller with `@AuthUser()` → `{ id, role }` (`id` = JWT `sub`). Never take user/owner ids from the request.
 - Another owner's resource → **404**, enforced by scoping the repository query.
 - Magic-link tokens and refresh sessions are single-use (atomic `findOneAndDelete`), stored only as sha256 hashes, and expire via MongoDB TTL indexes.
-- Behind a proxy enable `trust proxy` in `main.ts` so session IPs are the client's.
+- Sessions record a client-generated `deviceId` (from `X-Device-Id`) instead of an IP; `AuthSessionRepository.consumeByHash` scopes refresh-token rotation to that device.
 
 ## API contract
 

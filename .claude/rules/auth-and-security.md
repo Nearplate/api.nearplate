@@ -44,7 +44,7 @@ public async getMe(@AuthUser() user: TAuthUser) { ... }
 ## Other rules
 
 - CORS is pinned to `CORS_ORIGIN`; add new HTTP verbs to `main.ts`.
-- Behind a proxy/load balancer enable `trust proxy` in `main.ts`, otherwise `@ClientContext()` records the proxy's IP.
+- `@ClientContext()` no longer records an IP: sessions carry a client-generated `deviceId` (from `X-Device-Id`, validated as a UUID), and `AuthSessionRepository.consumeByHash` refuses to rotate a refresh token unless the device id matches the one it was issued to.
 - Log PII carefully — use `maskEmail` / `stripSensitiveQuery` from the logger module.
 - Env vars are validated in `src/app/modules/config/config.ts` via Zod — add new vars there and to `.env.example`.
 - Never hardcode secrets; never commit `.env`.

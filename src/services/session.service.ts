@@ -48,7 +48,7 @@ export class SessionService {
 		await this._authSessionRepository.create({
 			userId: user.id,
 			tokenHash,
-			ip: context.ip,
+			deviceId: context.deviceId,
 			userAgent: context.userAgent,
 			expiresAt: this._sessionTokenHelper.expiresAt(this._sessionTtlSeconds),
 		});
@@ -62,7 +62,8 @@ export class SessionService {
 	/**
 	 * Spends the refresh token and issues a fresh pair. The user is re-read so a
 	 * deleted account or changed role takes effect here; 401 for any token that
-	 * is unknown, expired, or already used.
+	 * is unknown, expired, already used, or presented from a different device
+	 * than the one it was issued to.
 	 */
 	public async refresh(
 		refreshToken: string,
@@ -70,6 +71,7 @@ export class SessionService {
 	): Promise<TAuthTokens> {
 		const session = await this._authSessionRepository.consumeByHash(
 			this._sessionTokenHelper.hash(refreshToken),
+			context.deviceId,
 		);
 		if (!session) {
 			throw new UnauthorizedException();

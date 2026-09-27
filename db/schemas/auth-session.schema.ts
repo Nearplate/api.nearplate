@@ -10,8 +10,14 @@ export class AuthSession {
 	@Prop({ type: String, required: true, unique: true })
 	tokenHash!: string;
 
+	/**
+	 * Client-generated UUID identifying the device the session belongs to
+	 * (from the `X-Device-Id` header). A refresh token only rotates when it is
+	 * presented with this same device id, so a leaked refresh token alone
+	 * cannot be replayed from another device.
+	 */
 	@Prop({ type: String, default: null })
-	ip!: string | null;
+	deviceId!: string | null;
 
 	@Prop({ type: String, default: null })
 	userAgent!: string | null;
@@ -30,7 +36,7 @@ export type TAuthSession = {
 	id: string;
 	userId: string;
 	tokenHash: string;
-	ip: string | null;
+	deviceId: string | null;
 	userAgent: string | null;
 	expiresAt: Date;
 	createdAt: Date;

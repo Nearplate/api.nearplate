@@ -37,7 +37,7 @@ export function configureApp(app: INestApplication): void {
 	app.enableCors({
 		origin: configService.getOrThrow<string>("CORS_ORIGIN"),
 		methods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
-		allowedHeaders: ["Authorization", "Content-Type"],
+		allowedHeaders: ["Authorization", "Content-Type", "X-Device-Id"],
 		credentials: false,
 		maxAge: 86400,
 	});
