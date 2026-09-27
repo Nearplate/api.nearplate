@@ -10,7 +10,7 @@ updating or adding the matching spec.
 | --------------------------------------------- | ------------------------------------------------------------------------------------- |
 | New/changed HTTP route, status, or wire shape | Spec for that path under `test/e2e/specs/`                                            |
 | New/changed auth or 401/403/404 behavior      | Auth/negative case on the same route                                                  |
-| New collection                                | Nothing to register: `reset()` empties every collection                               |
+| New table                                     | Nothing to register: `reset()` truncates every table                                  |
 | New adapter that must not hit a real vendor   | Fake under `test/e2e/helpers/fakes/` and override in the harness (`overrideProvider`) |
 | New required env var                          | Fixture in `test/e2e/setup/apply-test-env.cjs`                                        |
 
@@ -28,7 +28,7 @@ test/e2e/
 
 - Specs only under `test/e2e/specs/`. No `*.spec.ts` under `src/`. HTTP via supertest + full `AppModule`.
 - Reuse `getE2eApp()` and its `http`, `authHeader(role, sub?)`, `jwt`. Do not boot a second Nest app in a spec.
-- `reset()` (run before each test) deletes all documents, the `dbcache:*` and `ratelimit:*` Redis keys, and resets the fakes.
+- `reset()` (run before each test) truncates every table, clears the `dbcache:*` and `ratelimit:*` Redis keys, and resets the fakes.
 
 ## Constraints
 
@@ -37,13 +37,13 @@ test/e2e/
 - Force `NODE_ENV=development` (schema has no `test` value).
 - Email and Google are always faked: `FakeResendAdapter` captures links (`waitForLink`, `tokenOf`), `FakeGoogleOauthAdapter` maps test `code` strings to claims (`register`) and drives the redirect flow's `authorizeUrl`/`exchangeCode`. Never call the real vendors.
 - Use `seedUser({ role, email, firstName, lastName })` for an existing account with a valid access token, and `seedRestaurant(ownerId, overrides?)` / `seedMenuItem(ownerId, restaurantId, overrides?)` for domain data. `reset()` also clears the `ratelimit:*` keys and the fakes.
-- The harness applies `configureApp` (so routes are under `/v1`) and awaits `model.init()` for every model so indexes (unique slug, 2dsphere) exist before the first test.
+- The harness applies `configureApp` (so routes are under `/v1`); `global-setup.cjs` runs `db/migrations` before the first test, so every table, index, and constraint already exists.
 - `MAGIC_LINK_MAX_PER_EMAIL_PER_HOUR=3` in tests so the 429 path is cheap to hit.
 - Wire JSON is camelCase. Error bodies are `{ statusCode }` only.
 
 ## Commands
 
 ```bash
-npm run test:deps       # local MongoDB + Redis (docker compose)
+npm run test:deps       # local Postgres (PostGIS) + Redis (docker compose)
 npm run test:e2e        # Jest, run in band
 ```

@@ -23,7 +23,7 @@ paths:
 - **Sessions**: access JWT (short-lived) + opaque refresh token (only its sha256 is stored in `auth_sessions`), rotated on every `POST /auth/refresh`; a spent token is 401. `POST /auth/logout` revokes it (204, idempotent).
 - The result carries a `status` discriminator in a 200 body (`authenticated` | `role_mismatch` | `sent`) because error bodies are bare `{ statusCode }`.
 - Unknown and known emails answer identically for magic links (no account enumeration); the only disclosed case is `role_mismatch`. Requests are rate-limited per email in Redis (`MAGIC_LINK_MAX_PER_EMAIL_PER_HOUR`, 429).
-- Tokens (magic link, refresh) are single-use: consume with the repository's atomic `findOneAndDelete`, never find-then-delete.
+- Tokens (magic link, refresh) are single-use: consume with the repository's atomic `delete … returning`, never find-then-delete.
 
 ## Controller auth pattern
 
@@ -38,7 +38,7 @@ public async getMe(@AuthUser() user: TAuthUser) { ... }
 - Never accept an owner/user id from query params or body — take it from the token.
 - Return `404` (not `403`) when a resource exists but belongs to another account; enforce it in the repository filter.
 - Put `@Roles(...)` on the **class** when every route shares the same roles (`users`), and on **each handler** when the controller mixes public and guarded routes (`RestaurantController`: owner handlers use `@Roles(AuthRole.Restaurant)`, `nearby`/`:slug`/`:slug/menu` are public). Login, refresh, logout and guest omit it.
-- Ownership is enforced in the repository filter (`{ _id, ownerId }`); a foreign or unknown id is always 404. Menu items carry a denormalized `ownerId`, so they need no join.
+- Ownership is enforced in the repository filter (`and(eq(table.id, id), eq(table.ownerId, ownerId))`); a foreign or unknown id is always 404. Menu items carry a denormalized `ownerId`, so they need no join.
 - Roles are never changed at runtime: only `restaurant` accounts manage restaurants, and `admin` exists only in the database.
 
 ## Other rules

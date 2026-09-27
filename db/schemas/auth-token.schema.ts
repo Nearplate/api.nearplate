@@ -1,6 +1,12 @@
-import { Prop, Schema, SchemaFactory } from "@nestjs/mongoose";
-import type { HydratedDocument } from "mongoose";
-import type { TUserRole } from "./user.schema";
+import {
+	index,
+	pgEnum,
+	pgTable,
+	text,
+	timestamp,
+	uuid,
+} from "drizzle-orm/pg-core";
+import { userRoleEnum, type TUserRole } from "./user.schema";
 
 /**
  * Single-use tokens. Only the sha256 hash is stored; magic-link tokens are
@@ -13,36 +19,41 @@ export const AUTH_TOKEN_PURPOSES = {
 export type TAuthTokenPurpose =
 	(typeof AUTH_TOKEN_PURPOSES)[keyof typeof AUTH_TOKEN_PURPOSES];
 
-@Schema({ collection: "auth_tokens", timestamps: true })
-export class AuthToken {
-	@Prop({ type: String, required: true, unique: true })
-	tokenHash!: string;
+export const authTokenPurposeEnum = pgEnum("auth_token_purpose", [
+	AUTH_TOKEN_PURPOSES.MagicLink,
+	AUTH_TOKEN_PURPOSES.OauthState,
+]);
 
-	/** Null for an oauth_state row: Google state has no email yet. */
-	@Prop({ type: String, default: null, index: true })
-	email!: string | null;
+export const authTokens = pgTable(
+	"auth_tokens",
+	{
+		id: uuid().primaryKey().defaultRandom(),
+		tokenHash: text().notNull().unique(),
+		/** Null for an oauth_state row: Google state has no email yet. */
+		email: text(),
+		purpose: authTokenPurposeEnum().notNull(),
+		/** Role picked on the login screen; applied only when the user is new. */
+		intendedRole: userRoleEnum(),
+		/** PKCE code verifier for an oauth_state row; null for magic-link tokens. */
+		codeVerifier: text(),
+		/**
+		 * Postgres has no TTL index: expired rows are swept hourly by
+		 * `AuthCleanupSubscriber` and filtered out of every read here.
+		 */
+		expiresAt: timestamp({ withTimezone: true }).notNull(),
+		createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+		updatedAt: timestamp({ withTimezone: true })
+			.notNull()
+			.defaultNow()
+			.$onUpdate(() => new Date()),
+	},
+	(table) => [
+		index("auth_tokens_email_idx").on(table.email),
+		index("auth_tokens_expires_at_idx").on(table.expiresAt),
+	],
+);
 
-	@Prop({ type: String, required: true })
-	purpose!: TAuthTokenPurpose;
-
-	/** Role picked on the login screen; applied only when the user is new. */
-	@Prop({ type: String, default: null })
-	intendedRole!: TUserRole | null;
-
-	/** PKCE code verifier for an oauth_state row; null for magic-link tokens. */
-	@Prop({ type: String, default: null })
-	codeVerifier!: string | null;
-
-	/** MongoDB removes the document once this passes (TTL index below). */
-	@Prop({ type: Date, required: true })
-	expiresAt!: Date;
-
-	createdAt!: Date;
-	updatedAt!: Date;
-}
-
-export type AuthTokenDocument = HydratedDocument<AuthToken>;
-
+/** Plain row shape returned by `AuthTokenRepository`. */
 export type TAuthToken = {
 	id: string;
 	tokenHash: string;
@@ -54,6 +65,3 @@ export type TAuthToken = {
 	createdAt: Date;
 	updatedAt: Date;
 };
-
-export const AuthTokenSchema = SchemaFactory.createForClass(AuthToken);
-AuthTokenSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });

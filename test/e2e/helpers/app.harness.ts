@@ -3,6 +3,7 @@ import { JwtAdapter } from "@/adapters/jwt.adapter";
 import { ResendAdapter } from "@/adapters/resend.adapter";
 import { AppModule } from "@/app/app.module";
 import { configureApp } from "@/app/configure-app";
+import { DatabaseService } from "@/app/modules/database";
 import { AuthRole } from "@/domain/enums/auth-role";
 import { FoodType } from "@/domain/enums/food-type";
 import type { TCreateMenuItemInput } from "@/domain/types/menu-item.types";
@@ -13,16 +14,24 @@ import type { TMenuItem } from "@db/schemas/menu-item.schema";
 import type { TRestaurant } from "@db/schemas/restaurant.schema";
 import type { TUser, TUserRole } from "@db/schemas/user.schema";
 import type { INestApplication } from "@nestjs/common";
-import { getConnectionToken } from "@nestjs/mongoose";
 import { Test } from "@nestjs/testing";
+import { sql } from "drizzle-orm";
 import Redis from "ioredis";
-import type { Connection } from "mongoose";
 import { randomUUID } from "node:crypto";
 import request from "supertest";
 import { FakeGoogleOauthAdapter } from "./fakes/google-oauth.adapter.fake";
 import { FakeResendAdapter } from "./fakes/resend.adapter.fake";
 
 const _REDIS_KEY_PATTERNS = ["dbcache:*", "ratelimit:*"];
+/** Every table, leaf-first so `reset` reads the same as the schema's FKs. */
+const _TABLES = [
+	"menu_items",
+	"restaurants",
+	"addresses",
+	"auth_sessions",
+	"auth_tokens",
+	"users",
+];
 
 export type TSeededUser = TUser & { accessToken: string };
 
@@ -52,7 +61,7 @@ export type TE2eApp = {
 		restaurantId: string,
 		overrides?: Partial<TCreateMenuItemInput>,
 	) => Promise<TMenuItem>;
-	/** Drops every collection, clears cache/rate-limit keys, resets the fakes. */
+	/** Truncates every table, clears cache/rate-limit keys, resets the fakes. */
 	reset: () => Promise<void>;
 };
 
@@ -105,14 +114,8 @@ export async function startE2eApp(): Promise<TE2eApp> {
 	await app.init();
 
 	const jwt = app.get(JwtAdapter);
-	const connection0 = app.get<Connection>(getConnectionToken());
-	// Indexes build asynchronously on connect; `$geoNear` and the unique slug
-	// index must exist before the first test runs.
-	await Promise.all(
-		Object.values(connection0.models).map((model) => model.init()),
-	);
+	const databaseService = app.get(DatabaseService);
 	const users = app.get(UserRepository);
-	const connection = app.get<Connection>(getConnectionToken());
 
 	_ctx = {
 		app,
@@ -160,8 +163,11 @@ export async function startE2eApp(): Promise<TE2eApp> {
 				...overrides,
 			}),
 		reset: async () => {
-			const collections = await connection.db!.collections();
-			await Promise.all(collections.map((c) => c.deleteMany({})));
+			await databaseService.db.execute(
+				sql.raw(
+					`TRUNCATE TABLE ${_TABLES.join(", ")} RESTART IDENTITY CASCADE`,
+				),
+			);
 			await _clearRedisKeys();
 			resend.reset();
 			google.reset();

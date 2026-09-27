@@ -1,4 +1,8 @@
 const net = require("node:net");
+const path = require("node:path");
+const { Pool } = require("pg");
+const { drizzle } = require("drizzle-orm/node-postgres");
+const { migrate } = require("drizzle-orm/node-postgres/migrator");
 
 require("./apply-test-env.cjs");
 
@@ -30,16 +34,27 @@ async function waitForTcp(host, port, label) {
 }
 
 module.exports = async function globalSetup() {
-	const uri = new URL(process.env.MONGODB_URI);
+	const uri = new URL(process.env.DATABASE_URL);
 	if (!uri.pathname.endsWith("_test")) {
 		throw new Error(
 			`Refusing to run e2e against '${uri.pathname}': the database name must end in _test`,
 		);
 	}
-	await waitForTcp(uri.hostname, Number(uri.port || 27017), "MongoDB");
+	await waitForTcp(uri.hostname, Number(uri.port || 5432), "Postgres");
 	await waitForTcp(
 		process.env.REDIS_HOST,
 		Number(process.env.REDIS_PORT),
 		"Redis cache",
 	);
+
+	// Applies any migration not yet run, so the schema (including PostGIS
+	// extension/indexes) is current before the first spec connects.
+	const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+	try {
+		await migrate(drizzle(pool), {
+			migrationsFolder: path.join(__dirname, "../../../db/migrations"),
+		});
+	} finally {
+		await pool.end();
+	}
 };

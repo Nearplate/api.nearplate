@@ -1,6 +1,6 @@
-import { User, type UserDocument } from "@db/schemas/user.schema";
-import { getModelToken } from "@nestjs/mongoose";
-import type { Model } from "mongoose";
+import { DatabaseService } from "@/app/modules/database";
+import { users } from "@db/schemas/user.schema";
+import { eq } from "drizzle-orm";
 import { getE2eApp } from "../../helpers/app.harness";
 
 describe("users/me", () => {
@@ -114,8 +114,9 @@ describe("users/me", () => {
 		const { http, seedUser, app } = getE2eApp();
 		const user = await seedUser();
 		await app
-			.get<Model<UserDocument>>(getModelToken(User.name))
-			.deleteOne({ _id: user.id });
+			.get(DatabaseService)
+			.db.delete(users)
+			.where(eq(users.id, user.id));
 		await http
 			.get("/v1/users/me")
 			.set("Authorization", auth(user.accessToken))

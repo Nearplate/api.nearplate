@@ -24,6 +24,10 @@ ENV NODE_ENV=production
 COPY package.json ./
 COPY --from=prod-deps /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
+# db/migrations + drizzle.config.ts ship so `npm run db:migrate` can run
+# against this image right before `docker compose up -d api`.
+COPY drizzle.config.ts ./
+COPY db/migrations ./db/migrations
 USER node
 EXPOSE 3000
 HEALTHCHECK --interval=15s --timeout=5s --start-period=20s --retries=5 \

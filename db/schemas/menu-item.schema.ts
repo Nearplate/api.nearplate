@@ -1,59 +1,65 @@
 import { FOOD_TYPES, type FoodType } from "@/domain/enums/food-type";
-import { Prop, Schema, SchemaFactory } from "@nestjs/mongoose";
+import { sql } from "drizzle-orm";
 import {
-	type HydratedDocument,
-	Schema as MongooseSchema,
-	type Types,
-} from "mongoose";
-import { GEO_POINT_PROP, type TGeoPoint } from "./geo";
+	boolean,
+	check,
+	index,
+	integer,
+	pgEnum,
+	pgTable,
+	text,
+	timestamp,
+	uuid,
+} from "drizzle-orm/pg-core";
+import { geoPoint, type TGeoPoint } from "./geo";
+import { restaurants } from "./restaurant.schema";
+
+export const foodTypeEnum = pgEnum("food_type", FOOD_TYPES);
 
 /** One dish on a restaurant's menu. */
-@Schema({ collection: "menu_items", timestamps: true })
-export class MenuItem {
-	@Prop({
-		type: MongooseSchema.Types.ObjectId,
-		ref: "Restaurant",
-		required: true,
-	})
-	restaurant!: Types.ObjectId;
+export const menuItems = pgTable(
+	"menu_items",
+	{
+		id: uuid().primaryKey().defaultRandom(),
+		restaurantId: uuid()
+			.notNull()
+			.references(() => restaurants.id, { onDelete: "cascade" }),
+		/**
+		 * Denormalized from the restaurant so owner-scoped queries need no join.
+		 * Must be kept equal to the restaurant's `ownerId` (ownership never
+		 * transfers).
+		 */
+		ownerId: uuid().notNull(),
+		name: text().notNull(),
+		category: text().notNull(),
+		/** Integer paise (1/100 rupee): no floating-point money. */
+		priceInPaise: integer().notNull(),
+		foodType: foodTypeEnum().notNull(),
+		isAvailable: boolean().notNull().default(true),
+		/**
+		 * Denormalized copy of the restaurant's location, for geo queries on
+		 * items. Must be updated whenever the restaurant's location changes.
+		 */
+		location: geoPoint().notNull(),
+		createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+		updatedAt: timestamp({ withTimezone: true })
+			.notNull()
+			.defaultNow()
+			.$onUpdate(() => new Date()),
+	},
+	(table) => [
+		index("menu_items_restaurant_category_name_idx").on(
+			table.restaurantId,
+			table.category,
+			table.name,
+		),
+		index("menu_items_owner_id_idx").on(table.ownerId),
+		index("menu_items_location_gix").using("gist", table.location),
+		check("menu_items_price_in_paise_check", sql`${table.priceInPaise} >= 0`),
+	],
+);
 
-	/**
-	 * Denormalized from the restaurant so owner-scoped queries need no join.
-	 * Must be kept equal to `restaurant.ownerId` (ownership never transfers).
-	 */
-	@Prop({ type: String, required: true })
-	ownerId!: string;
-
-	@Prop({ type: String, required: true, trim: true })
-	name!: string;
-
-	@Prop({ type: String, required: true, trim: true })
-	category!: string;
-
-	/** Integer paise (1/100 rupee): no floating-point money. */
-	@Prop({ type: Number, required: true, min: 0 })
-	priceInPaise!: number;
-
-	@Prop({ type: String, enum: FOOD_TYPES, required: true })
-	foodType!: FoodType;
-
-	@Prop({ type: Boolean, default: true })
-	isAvailable!: boolean;
-
-	/**
-	 * Denormalized copy of the restaurant's location, for geo queries on items.
-	 * Must be updated whenever the restaurant's location changes.
-	 */
-	@Prop(GEO_POINT_PROP)
-	location!: TGeoPoint;
-
-	createdAt!: Date;
-	updatedAt!: Date;
-}
-
-export type MenuItemDocument = HydratedDocument<MenuItem>;
-
-/** Plain (lean) row shape with `_id` mapped to `id` by the repository. */
+/** Plain row shape returned by `MenuItemRepository`. */
 export type TMenuItem = {
 	id: string;
 	restaurantId: string;
@@ -67,8 +73,3 @@ export type TMenuItem = {
 	createdAt: Date;
 	updatedAt: Date;
 };
-
-export const MenuItemSchema = SchemaFactory.createForClass(MenuItem);
-MenuItemSchema.index({ restaurant: 1, category: 1, name: 1 });
-MenuItemSchema.index({ ownerId: 1 });
-MenuItemSchema.index({ location: "2dsphere", foodType: 1, isAvailable: 1 });

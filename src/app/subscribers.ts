@@ -1,4 +1,5 @@
+import { AuthCleanupSubscriber } from "@/subscribers/auth-cleanup.subscriber";
 import type { Provider } from "@nestjs/common";
 
-/** Cron entrypoints (see `.claude/rules/architecture-layers.md`). None yet. */
-export const Subscribers: Provider[] = [];
+/** Cron entrypoints (see `.claude/rules/architecture-layers.md`). */
+export const Subscribers: Provider[] = [AuthCleanupSubscriber];

@@ -8,7 +8,8 @@ function applyTestEnv() {
 		LOG_LEVEL: "error",
 		SERVER_APP_HTTP_PORT: "3000",
 		CORS_ORIGIN: "http://localhost:3400",
-		MONGODB_URI: "mongodb://localhost:27017/api_nearplate_test",
+		DATABASE_URL:
+			"postgres://postgres:postgres@localhost:5433/api_nearplate_test",
 		REDIS_HOST: "localhost",
 		REDIS_PORT: "6380",
 		JWT_ADMIN_ACCESS_SECRET: "e2e-admin-access",
