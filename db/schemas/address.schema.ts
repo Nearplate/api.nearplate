@@ -1,34 +1,22 @@
-import { Prop, Schema, SchemaFactory } from "@nestjs/mongoose";
-import type { HydratedDocument } from "mongoose";
+import { pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
 
 /** A postal address; referenced by a restaurant. */
-@Schema({ collection: "addresses", timestamps: true })
-export class Address {
-	@Prop({ type: String, required: true, trim: true })
-	line1!: string;
+export const addresses = pgTable("addresses", {
+	id: uuid().primaryKey().defaultRandom(),
+	line1: text().notNull(),
+	line2: text(),
+	city: text().notNull(),
+	state: text().notNull(),
+	zipcode: text().notNull(),
+	phoneNumber: text(),
+	createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+	updatedAt: timestamp({ withTimezone: true })
+		.notNull()
+		.defaultNow()
+		.$onUpdate(() => new Date()),
+});
 
-	@Prop({ type: String, default: null, trim: true })
-	line2!: string | null;
-
-	@Prop({ type: String, required: true, trim: true })
-	city!: string;
-
-	@Prop({ type: String, required: true, trim: true })
-	state!: string;
-
-	@Prop({ type: String, required: true, trim: true })
-	zipcode!: string;
-
-	@Prop({ type: String, default: null, trim: true })
-	phoneNumber!: string | null;
-
-	createdAt!: Date;
-	updatedAt!: Date;
-}
-
-export type AddressDocument = HydratedDocument<Address>;
-
-/** Plain (lean) row shape with `_id` mapped to `id` by the repository. */
+/** Plain row shape returned by `AddressRepository` (also nested in `TRestaurant`). */
 export type TAddress = {
 	id: string;
 	line1: string;
@@ -40,5 +28,3 @@ export type TAddress = {
 	createdAt: Date;
 	updatedAt: Date;
 };
-
-export const AddressSchema = SchemaFactory.createForClass(Address);

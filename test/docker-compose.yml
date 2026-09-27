@@ -1,11 +1,15 @@
 services:
-  mongo:
-    image: mongo:7
+  postgres:
+    image: imresamu/postgis:17-3.5
     ports:
-      - "27017:27017"
+      # Host port 5433 so it never touches a developer's own Postgres on 5432.
+      - "5433:5432"
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: api_nearplate_test
     healthcheck:
-      test:
-        ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      test: ["CMD", "pg_isready", "-U", "postgres"]
       interval: 2s
       timeout: 5s
       retries: 20

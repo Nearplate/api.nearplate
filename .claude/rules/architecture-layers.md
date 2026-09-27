@@ -60,7 +60,7 @@ Handles all DB work for **one collection/domain only**.
 - No HTTP concerns, no business rules beyond data access.
 - **Scope ownership in the query filter**, not read-then-check.
 - Cached unique lookups use `@DBCache`; matching writes use `@DBCacheInvalidate` (see `db-cache` rule). Never invent a parallel cache layer.
-- See `database-mongoose` for Mongoose conventions.
+- See `database-postgres` for Drizzle/Postgres conventions.
 
 ## Helper
 

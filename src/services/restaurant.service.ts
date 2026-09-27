@@ -1,3 +1,4 @@
+import { DatabaseService } from "@/app/modules/database";
 import { LogClass } from "@/app/modules/logger";
 import type {
 	TCreateMenuItemInput,
@@ -22,13 +23,14 @@ import {
 import type { TGeoPoint } from "@db/schemas/geo";
 import type { TMenuItem } from "@db/schemas/menu-item.schema";
 import type { TRestaurant } from "@db/schemas/restaurant.schema";
-import { Inject, Injectable, Logger, NotFoundException } from "@nestjs/common";
+import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 
 /**
  * Restaurant and menu business logic. A restaurant or menu item that is
  * missing, not the caller's, or under a different restaurant is a 404.
- * MongoDB transactions are not assumed (a standalone server has none), so
- * multi-collection writes are ordered and compensated instead.
+ * Multi-table writes (`create`, `update`, `remove`) run inside a Postgres
+ * transaction, so a failure partway through leaves nothing behind -- no
+ * manual compensation is needed.
  */
 @LogClass()
 @Injectable()
@@ -38,9 +40,9 @@ export class RestaurantService implements ICRUDService<
 	TUpdateRestaurantInput,
 	TListRestaurantsInput
 > {
-	private readonly _logger = new Logger(RestaurantService.name);
-
 	constructor(
+		@Inject(DatabaseService)
+		private readonly _databaseService: DatabaseService,
 		@Inject(RestaurantRepository)
 		private readonly _restaurantRepository: RestaurantRepository,
 		@Inject(AddressRepository)
@@ -50,27 +52,23 @@ export class RestaurantService implements ICRUDService<
 	) {}
 
 	/**
-	 * Creates the address, then the restaurant. If the restaurant cannot be
-	 * created the address is deleted again, so no orphan is left behind. The
+	 * Creates the address, then the restaurant, in one transaction. The
 	 * caller's role is not changed: only `restaurant` accounts reach this.
 	 */
 	public async create(
 		ownerId: string,
 		input: TCreateRestaurantInput,
 	): Promise<TRestaurant> {
-		const address = await this._addressRepository.create(input.address);
-		try {
-			return await this._restaurantRepository.create(ownerId, {
+		return this._databaseService.transaction(async () => {
+			const address = await this._addressRepository.create(input.address);
+			return this._restaurantRepository.create(ownerId, {
 				name: input.name,
 				cuisines: input.cuisines,
 				isPureVeg: input.isPureVeg,
 				location: this._toPoint(input.coordinates),
 				addressId: address.id,
 			});
-		} catch (error) {
-			await this._discardAddress(address.id);
-			throw error;
-		}
+		});
 	}
 
 	/** The caller's restaurants. */
@@ -91,51 +89,54 @@ export class RestaurantService implements ICRUDService<
 	}
 
 	/**
-	 * Updates fields and/or the address. Moving the restaurant also moves the
-	 * denormalized location on its menu items. The slug never changes.
+	 * Updates fields and/or the address, and the denormalized location on its
+	 * menu items when coordinates move, all in one transaction. The slug never
+	 * changes.
 	 */
 	public async update(
 		ownerId: string,
 		id: string,
 		input: TUpdateRestaurantInput,
 	): Promise<TRestaurant> {
-		const current = await this.get(ownerId, id);
-		const { address, coordinates, ...fields } = input;
+		return this._databaseService.transaction(async () => {
+			const current = await this.get(ownerId, id);
+			const { address, coordinates, ...fields } = input;
 
-		if (address && Object.keys(address).length > 0) {
-			await this._addressRepository.update(current.address.id, address);
-		}
-		const location = coordinates ? this._toPoint(coordinates) : undefined;
-		const patch = { ...fields, ...(location ? { location } : {}) };
-		if (Object.keys(patch).length > 0) {
-			const updated = await this._restaurantRepository.update(
-				ownerId,
-				id,
-				patch,
-			);
-			if (!updated) {
-				throw new NotFoundException();
+			if (address && Object.keys(address).length > 0) {
+				await this._addressRepository.update(current.address.id, address);
 			}
-		}
-		if (location) {
-			await this._menuItemRepository.updateLocationByRestaurant(id, location);
-		}
-		return this.get(ownerId, id);
+			const location = coordinates ? this._toPoint(coordinates) : undefined;
+			const patch = { ...fields, ...(location ? { location } : {}) };
+			if (Object.keys(patch).length > 0) {
+				const updated = await this._restaurantRepository.update(
+					ownerId,
+					id,
+					patch,
+				);
+				if (!updated) {
+					throw new NotFoundException();
+				}
+			}
+			if (location) {
+				await this._menuItemRepository.updateLocationByRestaurant(id, location);
+			}
+			return this.get(ownerId, id);
+		});
 	}
 
 	/**
-	 * Deletes the restaurant first (so it disappears from public reads at once),
-	 * then its menu items and address. A failure after the first step leaves only
-	 * unreachable orphans.
+	 * Deletes the restaurant and its address in one transaction; menu items
+	 * cascade with the restaurant at the database level.
 	 */
 	public async remove(ownerId: string, id: string): Promise<void> {
-		const current = await this.get(ownerId, id);
-		const deleted = await this._restaurantRepository.delete(ownerId, id);
-		if (!deleted) {
-			throw new NotFoundException();
-		}
-		await this._menuItemRepository.deleteByRestaurant(id);
-		await this._addressRepository.delete(current.address.id);
+		await this._databaseService.transaction(async () => {
+			const current = await this.get(ownerId, id);
+			const deleted = await this._restaurantRepository.delete(ownerId, id);
+			if (!deleted) {
+				throw new NotFoundException();
+			}
+			await this._addressRepository.delete(current.address.id);
+		});
 	}
 
 	/** Puts the caller's restaurant online or offline. */
@@ -265,16 +266,5 @@ export class RestaurantService implements ICRUDService<
 	/** `[lng, lat]` → GeoJSON Point. */
 	private _toPoint(coordinates: TCoordinates): TGeoPoint {
 		return { type: "Point", coordinates };
-	}
-
-	/** Compensating delete; a failure here is logged, never hides the real error. */
-	private async _discardAddress(addressId: string): Promise<void> {
-		try {
-			await this._addressRepository.delete(addressId);
-		} catch (error) {
-			this._logger.error(
-				`Failed to discard orphan address ${addressId}: ${error}`,
-			);
-		}
 	}
 }

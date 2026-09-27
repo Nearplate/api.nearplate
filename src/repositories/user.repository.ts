@@ -1,18 +1,13 @@
 import { CacheTTL } from "@/app/constants/cache-ttl";
 import { LogClass } from "@/app/modules/logger";
+import { DatabaseService } from "@/app/modules/database";
 import { DBCache, DBCacheInvalidate } from "@/decorators/db-cache.decorator";
-import {
-	User,
-	type TUser,
-	type TUserRole,
-	type UserDocument,
-} from "@db/schemas/user.schema";
-import { Injectable } from "@nestjs/common";
-import { InjectModel } from "@nestjs/mongoose";
-import { type Model, isValidObjectId } from "mongoose";
+import { isUniqueViolation, isUuid } from "@/repositories/repository.utils";
+import { users, type TUser, type TUserRole } from "@db/schemas/user.schema";
+import { Inject, Injectable } from "@nestjs/common";
+import { eq } from "drizzle-orm";
 
 const _ENTITY = "user";
-const _DUPLICATE_KEY_ERROR = 11000;
 const _CACHE_FIELDS = ["id", "email", "googleSub"];
 
 export type TCreateUserInput = {
@@ -36,11 +31,6 @@ export type TUpdateUserInput = Partial<{
 	lastLoginAt: Date;
 }>;
 
-type TLeanUser = Omit<TUser, "id" | "googleSub"> & {
-	_id: { toString(): string };
-	googleSub?: string;
-};
-
 /**
  * Data access for `users`. Reads are cached (5 min), so cached rows come back
  * with dates as ISO strings -- do not call `Date` methods on them. Editing a
@@ -50,32 +40,41 @@ type TLeanUser = Omit<TUser, "id" | "googleSub"> & {
 @Injectable()
 export class UserRepository {
 	constructor(
-		@InjectModel(User.name)
-		private readonly _model: Model<UserDocument>,
+		@Inject(DatabaseService)
+		private readonly _databaseService: DatabaseService,
 	) {}
 
 	/** Null when missing or the id is malformed. */
 	@DBCache({ entity: _ENTITY, by: "id", ttl: CacheTTL.FIVE_MIN })
 	public async findById(id: string): Promise<TUser | null> {
-		if (!isValidObjectId(id)) {
+		if (!isUuid(id)) {
 			return null;
 		}
-		const row = await this._model.findById(id).lean<TLeanUser>();
-		return row ? this._toRow(row) : null;
+		const [row] = await this._databaseService.db
+			.select()
+			.from(users)
+			.where(eq(users.id, id));
+		return row ?? null;
 	}
 
 	/** `email` must already be lowercased. */
 	@DBCache({ entity: _ENTITY, by: "email", ttl: CacheTTL.FIVE_MIN })
 	public async findByEmail(email: string): Promise<TUser | null> {
-		const row = await this._model.findOne({ email }).lean<TLeanUser>();
-		return row ? this._toRow(row) : null;
+		const [row] = await this._databaseService.db
+			.select()
+			.from(users)
+			.where(eq(users.email, email));
+		return row ?? null;
 	}
 
 	/** Lookup by Google's stable subject id. */
 	@DBCache({ entity: _ENTITY, by: "googleSub", ttl: CacheTTL.FIVE_MIN })
 	public async findByGoogleSub(googleSub: string): Promise<TUser | null> {
-		const row = await this._model.findOne({ googleSub }).lean<TLeanUser>();
-		return row ? this._toRow(row) : null;
+		const [row] = await this._databaseService.db
+			.select()
+			.from(users)
+			.where(eq(users.googleSub, googleSub));
+		return row ?? null;
 	}
 
 	/**
@@ -84,10 +83,13 @@ export class UserRepository {
 	 */
 	public async create(input: TCreateUserInput): Promise<TUser | null> {
 		try {
-			const doc = await this._model.create(input);
-			return this._toRow(doc.toObject() as unknown as TLeanUser);
+			const [row] = await this._databaseService.db
+				.insert(users)
+				.values(input)
+				.returning();
+			return row;
 		} catch (error) {
-			if ((error as { code?: number }).code === _DUPLICATE_KEY_ERROR) {
+			if (isUniqueViolation(error)) {
 				return null;
 			}
 			throw error;
@@ -104,18 +106,14 @@ export class UserRepository {
 		id: string,
 		patch: TUpdateUserInput,
 	): Promise<TUser | null> {
-		if (!isValidObjectId(id)) {
+		if (!isUuid(id)) {
 			return null;
 		}
-		const row = await this._model
-			.findByIdAndUpdate(id, { $set: patch }, { new: true })
-			.lean<TLeanUser>();
-		return row ? this._toRow(row) : null;
-	}
-
-	/** Maps a lean document to the plain `TUser` row (`_id` → `id`). */
-	private _toRow(row: TLeanUser): TUser {
-		const { _id, googleSub, ...rest } = row;
-		return { id: _id.toString(), googleSub: googleSub ?? null, ...rest };
+		const [row] = await this._databaseService.db
+			.update(users)
+			.set(patch)
+			.where(eq(users.id, id))
+			.returning();
+		return row ?? null;
 	}
 }

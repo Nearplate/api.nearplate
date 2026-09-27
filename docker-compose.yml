@@ -1,6 +1,6 @@
-# Runs the API with its own MongoDB and Redis. Config comes from `.env`
+# Runs the API with its own Postgres and Redis. Config comes from `.env`
 # (cp .env.example .env); the hostnames below override the localhost defaults.
-# MongoDB and Redis are not published to the host, so this stack never clashes
+# Postgres and Redis are not published to the host, so this stack never clashes
 # with local instances. Use test/docker-compose.yml for the e2e dependencies.
 services:
   api:
@@ -16,25 +16,30 @@ services:
     networks:
       - api_nearplate_net
     depends_on:
-      # mongo:
-      #   condition: service_healthy
+      postgres:
+        condition: service_healthy
       redis:
         condition: service_healthy
 
-  # mongo:
-  #   image: mongo:7
-  #   restart: unless-stopped
-  #   container_name: api_nearplate_mongo
-  #   volumes:
-  #     - api_nearplate_mongo_data:/data/db
-  #   networks:
-  #     - api_nearplate_net
-  #   healthcheck:
-  #     test:
-  #       ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
-  #     interval: 5s
-  #     timeout: 5s
-  #     retries: 20
+  postgres:
+    # PostGIS on top of Postgres 17; `imresamu/postgis` ships arm64 + amd64
+    # images (the official `postgis/postgis` is amd64-only).
+    image: imresamu/postgis:17-3.5
+    restart: unless-stopped
+    container_name: api_nearplate_postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: api_nearplate
+    volumes:
+      - api_nearplate_postgres_data:/var/lib/postgresql/data
+    networks:
+      - api_nearplate_net
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
 
   redis:
     image: redis:7-alpine
@@ -54,9 +59,9 @@ volumes:
   api_nearplate_redis_data:
     name: api_nearplate_redis_data
     driver: local
-  # api_nearplate_mongo_data:
-  #   name: api_nearplate_mongo_data
-  #   driver: local
+  api_nearplate_postgres_data:
+    name: api_nearplate_postgres_data
+    driver: local
 networks:
   api_nearplate_net:
     name: api_nearplate_net

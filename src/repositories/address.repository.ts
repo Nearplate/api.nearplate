@@ -1,12 +1,9 @@
+import { DatabaseService } from "@/app/modules/database";
 import { LogClass } from "@/app/modules/logger";
-import {
-	Address,
-	type AddressDocument,
-	type TAddress,
-} from "@db/schemas/address.schema";
-import { Injectable } from "@nestjs/common";
-import { InjectModel } from "@nestjs/mongoose";
-import { type Model, isValidObjectId } from "mongoose";
+import { isUuid } from "@/repositories/repository.utils";
+import { addresses, type TAddress } from "@db/schemas/address.schema";
+import { Inject, Injectable } from "@nestjs/common";
+import { eq } from "drizzle-orm";
 
 export type TCreateAddressInput = {
 	line1: string;
@@ -19,38 +16,34 @@ export type TCreateAddressInput = {
 
 export type TUpdateAddressInput = Partial<TCreateAddressInput>;
 
-export type TLeanAddress = Omit<TAddress, "id"> & {
-	_id: { toString(): string };
-};
-
-/** Maps a lean address (also the populated one inside a restaurant) to `TAddress`. */
-export function toAddressRow(row: TLeanAddress): TAddress {
-	const { _id, ...rest } = row;
-	return { id: _id.toString(), ...rest };
-}
-
 /** Data access for `addresses`. Ownership is enforced through the restaurant. */
 @LogClass()
 @Injectable()
 export class AddressRepository {
 	constructor(
-		@InjectModel(Address.name)
-		private readonly _model: Model<AddressDocument>,
+		@Inject(DatabaseService)
+		private readonly _databaseService: DatabaseService,
 	) {}
 
 	/** Inserts an address. */
 	public async create(input: TCreateAddressInput): Promise<TAddress> {
-		const doc = await this._model.create(input);
-		return toAddressRow(doc.toObject() as unknown as TLeanAddress);
+		const [row] = await this._databaseService.db
+			.insert(addresses)
+			.values(input)
+			.returning();
+		return row;
 	}
 
 	/** Null when missing or the id is malformed. */
 	public async findById(id: string): Promise<TAddress | null> {
-		if (!isValidObjectId(id)) {
+		if (!isUuid(id)) {
 			return null;
 		}
-		const row = await this._model.findById(id).lean<TLeanAddress>();
-		return row ? toAddressRow(row) : null;
+		const [row] = await this._databaseService.db
+			.select()
+			.from(addresses)
+			.where(eq(addresses.id, id));
+		return row ?? null;
 	}
 
 	/** Applies only the keys present in `patch`; null when missing. */
@@ -58,21 +51,26 @@ export class AddressRepository {
 		id: string,
 		patch: TUpdateAddressInput,
 	): Promise<TAddress | null> {
-		if (!isValidObjectId(id)) {
+		if (!isUuid(id)) {
 			return null;
 		}
-		const row = await this._model
-			.findByIdAndUpdate(id, { $set: patch }, { new: true })
-			.lean<TLeanAddress>();
-		return row ? toAddressRow(row) : null;
+		const [row] = await this._databaseService.db
+			.update(addresses)
+			.set(patch)
+			.where(eq(addresses.id, id))
+			.returning();
+		return row ?? null;
 	}
 
 	/** True when an address was deleted. */
 	public async delete(id: string): Promise<boolean> {
-		if (!isValidObjectId(id)) {
+		if (!isUuid(id)) {
 			return false;
 		}
-		const result = await this._model.deleteOne({ _id: id });
-		return result.deletedCount === 1;
+		const rows = await this._databaseService.db
+			.delete(addresses)
+			.where(eq(addresses.id, id))
+			.returning({ id: addresses.id });
+		return rows.length === 1;
 	}
 }

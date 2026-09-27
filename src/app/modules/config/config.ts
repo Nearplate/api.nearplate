@@ -26,8 +26,10 @@ export const CorsConfigSchema = z.object({
 	CORS_ORIGIN: _str.default("http://localhost:3400"),
 });
 
-export const MongoConfigSchema = z.object({
-	MONGODB_URI: _str.default("mongodb://localhost:27017/api_nearplate"),
+export const PostgresConfigSchema = z.object({
+	DATABASE_URL: _str.default(
+		"postgres://postgres:postgres@localhost:5432/api_nearplate",
+	),
 });
 
 /** Cache Redis for `@DBCache` / `RedisCacheAdapter`. */
@@ -94,7 +96,7 @@ export const ConfigSchema = NodeConfigSchema.merge(LogConfigSchema)
 	.merge(ServerAppConfigSchema)
 	.merge(CorsConfigSchema)
 	.merge(WebAppConfigSchema)
-	.merge(MongoConfigSchema)
+	.merge(PostgresConfigSchema)
 	.merge(RedisConfigSchema)
 	.merge(JwtConfigSchema)
 	.merge(AuthConfigSchema)

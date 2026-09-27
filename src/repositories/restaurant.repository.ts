@@ -1,29 +1,22 @@
+import { DatabaseService, type TDatabase } from "@/app/modules/database";
 import { LogClass } from "@/app/modules/logger";
 import type {
 	ICRUDRepository,
 	TPage,
 } from "@/domain/interfaces/crud.interface";
-import type { RestaurantStatus } from "@/domain/enums/restaurant-status";
+import { RestaurantStatus } from "@/domain/enums/restaurant-status";
 import type {
 	TListRestaurantsInput,
 	TNearbyRestaurantsInput,
 } from "@/domain/types/restaurant.types";
 import { SlugHelper } from "@/helpers/slug.helper";
-import {
-	type TLeanAddress,
-	toAddressRow,
-} from "@/repositories/address.repository";
+import { isUniqueViolation, isUuid } from "@/repositories/repository.utils";
+import { addresses, type TAddress } from "@db/schemas/address.schema";
 import type { TGeoPoint } from "@db/schemas/geo";
-import {
-	Restaurant,
-	type RestaurantDocument,
-	type TRestaurant,
-} from "@db/schemas/restaurant.schema";
+import { restaurants, type TRestaurant } from "@db/schemas/restaurant.schema";
 import { Inject, Injectable } from "@nestjs/common";
-import { InjectModel } from "@nestjs/mongoose";
-import { type FilterQuery, type Model, isValidObjectId } from "mongoose";
+import { and, count, desc, eq, sql } from "drizzle-orm";
 
-const _DUPLICATE_KEY_ERROR = 11000;
 const _SLUG_ATTEMPTS = 5;
 
 /** Persistence-level create: the address already exists, coordinates are GeoJSON. */
@@ -45,9 +38,9 @@ export type TUpdateRestaurantRecord = Partial<{
 
 export type TNearbyRestaurant = TRestaurant & { distanceMeters: number };
 
-type TLeanRestaurant = Omit<TRestaurant, "id" | "address"> & {
-	_id: { toString(): string };
-	address: TLeanAddress;
+type TJoinedRow = {
+	restaurant: typeof restaurants.$inferSelect;
+	address: TAddress;
 };
 
 /** Data access for `restaurants`. Owner-facing methods are owner-scoped. */
@@ -60,35 +53,35 @@ export class RestaurantRepository implements ICRUDRepository<
 	TListRestaurantsInput
 > {
 	constructor(
-		@InjectModel(Restaurant.name)
-		private readonly _model: Model<RestaurantDocument>,
+		@Inject(DatabaseService)
+		private readonly _databaseService: DatabaseService,
 		@Inject(SlugHelper)
 		private readonly _slugHelper: SlugHelper,
 	) {}
 
 	/**
 	 * Inserts a restaurant with a slug derived from its name. A slug collision
-	 * (duplicate-key error) retries with a random suffix, up to a few attempts.
+	 * (unique violation) retries with a random suffix, up to a few attempts.
+	 * Each attempt runs in its own savepoint so a failed insert does not abort
+	 * the caller's outer transaction (`RestaurantService.create`).
 	 */
 	public async create(
 		ownerId: string,
 		input: TCreateRestaurantRecord,
 	): Promise<TRestaurant> {
-		const { addressId, ...rest } = input;
 		const base = this._slugHelper.toSlug(input.name);
 		for (let attempt = 0; attempt < _SLUG_ATTEMPTS; attempt += 1) {
 			const slug = attempt === 0 ? base : this._slugHelper.withSuffix(base);
 			try {
-				const doc = await this._model.create({
-					...rest,
-					ownerId,
-					slug,
-					address: addressId,
+				return await this._databaseService.db.transaction(async (tx) => {
+					const [inserted] = await tx
+						.insert(restaurants)
+						.values({ ...input, ownerId, slug })
+						.returning({ id: restaurants.id });
+					return this._selectJoinedOrThrow(tx, eq(restaurants.id, inserted.id));
 				});
-				await doc.populate("address");
-				return this._toRow(doc.toObject() as unknown as TLeanRestaurant);
 			} catch (error) {
-				if ((error as { code?: number }).code !== _DUPLICATE_KEY_ERROR) {
+				if (!isUniqueViolation(error)) {
 					throw error;
 				}
 			}
@@ -101,21 +94,28 @@ export class RestaurantRepository implements ICRUDRepository<
 		ownerId: string,
 		query: TListRestaurantsInput,
 	): Promise<TPage<TRestaurant>> {
-		const filter: FilterQuery<RestaurantDocument> = {
-			ownerId,
-			...(query.status ? { status: query.status } : {}),
-		};
-		const [rows, total] = await Promise.all([
-			this._model
-				.find(filter)
-				.sort({ createdAt: -1, _id: -1 })
-				.skip(query.offset)
+		const filter = and(
+			eq(restaurants.ownerId, ownerId),
+			query.status ? eq(restaurants.status, query.status) : undefined,
+		);
+		const [rows, [totalRow]] = await Promise.all([
+			this._databaseService.db
+				.select({ restaurant: restaurants, address: addresses })
+				.from(restaurants)
+				.innerJoin(addresses, eq(restaurants.addressId, addresses.id))
+				.where(filter)
+				.orderBy(desc(restaurants.createdAt), desc(restaurants.id))
 				.limit(query.limit)
-				.populate("address")
-				.lean<TLeanRestaurant[]>(),
-			this._model.countDocuments(filter),
+				.offset(query.offset),
+			this._databaseService.db
+				.select({ total: count() })
+				.from(restaurants)
+				.where(filter),
 		]);
-		return { items: rows.map((row) => this._toRow(row)), total };
+		return {
+			items: rows.map((row) => this._toRow(row)),
+			total: totalRow?.total ?? 0,
+		};
 	}
 
 	/** Null when missing, malformed id, or owned by someone else. */
@@ -123,14 +123,13 @@ export class RestaurantRepository implements ICRUDRepository<
 		ownerId: string,
 		id: string,
 	): Promise<TRestaurant | null> {
-		if (!isValidObjectId(id)) {
+		if (!isUuid(id)) {
 			return null;
 		}
-		const row = await this._model
-			.findOne({ _id: id, ownerId })
-			.populate("address")
-			.lean<TLeanRestaurant>();
-		return row ? this._toRow(row) : null;
+		return this._selectJoined(
+			this._databaseService.db,
+			and(eq(restaurants.id, id), eq(restaurants.ownerId, ownerId)),
+		);
 	}
 
 	/** Applies only the keys present; null when missing or not owned. */
@@ -139,80 +138,107 @@ export class RestaurantRepository implements ICRUDRepository<
 		id: string,
 		patch: TUpdateRestaurantRecord,
 	): Promise<TRestaurant | null> {
-		if (!isValidObjectId(id)) {
+		if (!isUuid(id)) {
 			return null;
 		}
-		const row = await this._model
-			.findOneAndUpdate({ _id: id, ownerId }, { $set: patch }, { new: true })
-			.populate("address")
-			.lean<TLeanRestaurant>();
-		return row ? this._toRow(row) : null;
+		const [updated] = await this._databaseService.db
+			.update(restaurants)
+			.set(patch)
+			.where(and(eq(restaurants.id, id), eq(restaurants.ownerId, ownerId)))
+			.returning({ id: restaurants.id });
+		if (!updated) {
+			return null;
+		}
+		return this._selectJoined(this._databaseService.db, eq(restaurants.id, id));
 	}
 
 	/** True when a restaurant was deleted. */
 	public async delete(ownerId: string, id: string): Promise<boolean> {
-		if (!isValidObjectId(id)) {
+		if (!isUuid(id)) {
 			return false;
 		}
-		const result = await this._model.deleteOne({ _id: id, ownerId });
-		return result.deletedCount === 1;
+		const rows = await this._databaseService.db
+			.delete(restaurants)
+			.where(and(eq(restaurants.id, id), eq(restaurants.ownerId, ownerId)))
+			.returning({ id: restaurants.id });
+		return rows.length === 1;
 	}
 
 	/** Public lookup by slug (any status, so clients can show "closed"). */
 	public async findBySlug(slug: string): Promise<TRestaurant | null> {
-		const row = await this._model
-			.findOne({ slug })
-			.populate("address")
-			.lean<TLeanRestaurant>();
-		return row ? this._toRow(row) : null;
+		return this._selectJoined(
+			this._databaseService.db,
+			eq(restaurants.slug, slug),
+		);
 	}
 
 	/**
 	 * Online restaurants within `radiusMeters` of a point, nearest first, with
-	 * `distanceMeters`. `$geoNear` must be the first stage and uses the
-	 * collection's single 2dsphere index.
+	 * `distanceMeters`. Casts `location` to `geography` so `ST_DWithin` and
+	 * `ST_Distance` measure real meters over the sphere, not planar degrees.
 	 */
 	public async nearby(
 		input: TNearbyRestaurantsInput,
 	): Promise<TNearbyRestaurant[]> {
-		const rows = await this._model.aggregate<
-			TLeanRestaurant & { distanceMeters: number }
-		>([
-			{
-				$geoNear: {
-					near: { type: "Point", coordinates: input.coordinates },
-					distanceField: "distanceMeters",
-					maxDistance: input.radiusMeters,
-					spherical: true,
-					query: {
-						status: "online",
-						...(input.isPureVeg !== undefined
-							? { isPureVeg: input.isPureVeg }
-							: {}),
-						...(input.cuisine ? { cuisines: input.cuisine } : {}),
-					},
-				},
-			},
-			{ $limit: input.limit },
-			{
-				$lookup: {
-					from: "addresses",
-					localField: "address",
-					foreignField: "_id",
-					as: "address",
-				},
-			},
-			{ $unwind: "$address" },
-		]);
+		const [lng, lat] = input.coordinates;
+		const point = sql`ST_SetSRID(ST_MakePoint(${lng}, ${lat}), 4326)::geography`;
+		const distance = sql<number>`ST_Distance(${restaurants.location}::geography, ${point})`;
+		const rows = await this._databaseService.db
+			.select({
+				restaurant: restaurants,
+				address: addresses,
+				distanceMeters: distance,
+			})
+			.from(restaurants)
+			.innerJoin(addresses, eq(restaurants.addressId, addresses.id))
+			.where(
+				and(
+					eq(restaurants.status, RestaurantStatus.Online),
+					sql`ST_DWithin(${restaurants.location}::geography, ${point}, ${input.radiusMeters})`,
+					input.isPureVeg !== undefined
+						? eq(restaurants.isPureVeg, input.isPureVeg)
+						: undefined,
+					input.cuisine
+						? sql`${input.cuisine} = ANY(${restaurants.cuisines})`
+						: undefined,
+				),
+			)
+			.orderBy(distance)
+			.limit(input.limit);
 		return rows.map((row) => ({
 			...this._toRow(row),
 			distanceMeters: row.distanceMeters,
 		}));
 	}
 
-	/** Maps a lean, address-populated document to the plain `TRestaurant` row. */
-	private _toRow(row: TLeanRestaurant): TRestaurant {
-		const { _id, address, ...rest } = row;
-		return { id: _id.toString(), address: toAddressRow(address), ...rest };
+	/** Runs the restaurant+address join, scoped by `filter`; null when no row matches. */
+	private async _selectJoined(
+		db: TDatabase,
+		filter: ReturnType<typeof and>,
+	): Promise<TRestaurant | null> {
+		const [row] = await db
+			.select({ restaurant: restaurants, address: addresses })
+			.from(restaurants)
+			.innerJoin(addresses, eq(restaurants.addressId, addresses.id))
+			.where(filter);
+		return row ? this._toRow(row) : null;
+	}
+
+	/** Like `_selectJoined`, but the row is expected to exist (right after an insert). */
+	private async _selectJoinedOrThrow(
+		db: TDatabase,
+		filter: ReturnType<typeof and>,
+	): Promise<TRestaurant> {
+		const row = await this._selectJoined(db, filter);
+		if (!row) {
+			throw new Error("Restaurant vanished immediately after insert");
+		}
+		return row;
+	}
+
+	/** Maps a joined row to the plain `TRestaurant` row. */
+	private _toRow(row: TJoinedRow): TRestaurant {
+		const { addressId: _addressId, ...rest } = row.restaurant;
+		return { ...rest, address: row.address };
 	}
 }

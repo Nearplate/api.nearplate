@@ -19,7 +19,7 @@ paths:
 - Transformer methods: `to{Action}RequestDTO` / `to{Action}ResponseDTO`.
 - Constants in barrel arrays: PascalCase plural (`Controllers`, `Services`).
 - Private members: `_` prefix.
-- Injected dependencies are named after their class: `_` + camelCase class name (`_backgroundJobHelper`, `_resendAdapter`, `_authTokenRepository`), never shortened (`_resend`, `_service`). Mongoose `@InjectModel` fields are `_model`, `@InjectConnection` is `_connection`.
+- Injected dependencies are named after their class: `_` + camelCase class name (`_backgroundJobHelper`, `_resendAdapter`, `_authTokenRepository`, `_databaseService`), never shortened (`_resend`, `_service`, `_db`).
 
 ## JSDoc
 

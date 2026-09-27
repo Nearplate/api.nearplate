@@ -1,13 +1,11 @@
+import { DatabaseService } from "@/app/modules/database";
+import { AuthRole } from "@/domain/enums/auth-role";
 import { AuthSessionRepository } from "@/repositories/auth-session.repository";
 import { SessionTokenHelper } from "@/helpers/session-token.helper";
-import {
-	AuthSession,
-	type AuthSessionDocument,
-} from "@db/schemas/auth-session.schema";
-import { User, type UserDocument } from "@db/schemas/user.schema";
-import { getModelToken } from "@nestjs/mongoose";
+import { authSessions } from "@db/schemas/auth-session.schema";
+import { users } from "@db/schemas/user.schema";
+import { eq } from "drizzle-orm";
 import { decode } from "jsonwebtoken";
-import type { Model } from "mongoose";
 import { getE2eApp } from "../../helpers/app.harness";
 
 const DEVICE_A = "11111111-1111-4111-8111-111111111111";
@@ -73,8 +71,10 @@ describe("sessions and profile", () => {
 	it("picks up a changed role on refresh", async () => {
 		const session = await signIn();
 		await getE2eApp()
-			.app.get<Model<UserDocument>>(getModelToken(User.name))
-			.updateOne({ _id: session.user.id }, { role: "admin" });
+			.app.get(DatabaseService)
+			.db.update(users)
+			.set({ role: AuthRole.Admin })
+			.where(eq(users.id, session.user.id));
 		const next = await refresh(session.refreshToken).expect(200);
 		const payload = decode(next.body.accessToken) as { role: string };
 		expect(payload.role).toBe("admin");
@@ -96,10 +96,11 @@ describe("sessions and profile", () => {
 
 	it("stores the device id from X-Device-Id on sign-in", async () => {
 		const session = await signIn("carol@example.com", DEVICE_A);
-		const stored = await getE2eApp()
-			.app.get<Model<AuthSessionDocument>>(getModelToken(AuthSession.name))
-			.findOne({ userId: session.user.id })
-			.lean();
+		const [stored] = await getE2eApp()
+			.app.get(DatabaseService)
+			.db.select()
+			.from(authSessions)
+			.where(eq(authSessions.userId, session.user.id));
 		expect(stored?.deviceId).toBe(DEVICE_A);
 	});
 
@@ -112,10 +113,11 @@ describe("sessions and profile", () => {
 
 	it("stores a malformed X-Device-Id header as null", async () => {
 		const session = await signIn("erin@example.com", "not-a-uuid");
-		const stored = await getE2eApp()
-			.app.get<Model<AuthSessionDocument>>(getModelToken(AuthSession.name))
-			.findOne({ userId: session.user.id })
-			.lean();
+		const [stored] = await getE2eApp()
+			.app.get(DatabaseService)
+			.db.select()
+			.from(authSessions)
+			.where(eq(authSessions.userId, session.user.id));
 		expect(stored?.deviceId).toBeNull();
 	});
 });

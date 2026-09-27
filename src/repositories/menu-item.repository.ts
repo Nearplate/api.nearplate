@@ -1,3 +1,4 @@
+import { DatabaseService } from "@/app/modules/database";
 import { LogClass } from "@/app/modules/logger";
 import type { FoodType } from "@/domain/enums/food-type";
 import type { TPage } from "@/domain/interfaces/crud.interface";
@@ -5,15 +6,11 @@ import type {
 	TListMenuItemsInput,
 	TUpdateMenuItemInput,
 } from "@/domain/types/menu-item.types";
+import { isUuid } from "@/repositories/repository.utils";
 import type { TGeoPoint } from "@db/schemas/geo";
-import {
-	MenuItem,
-	type MenuItemDocument,
-	type TMenuItem,
-} from "@db/schemas/menu-item.schema";
-import { Injectable } from "@nestjs/common";
-import { InjectModel } from "@nestjs/mongoose";
-import { type FilterQuery, type Model, isValidObjectId } from "mongoose";
+import { menuItems, type TMenuItem } from "@db/schemas/menu-item.schema";
+import { Inject, Injectable } from "@nestjs/common";
+import { and, asc, count, eq } from "drizzle-orm";
 
 /** Persistence-level create: the location is copied from the restaurant. */
 export type TCreateMenuItemRecord = {
@@ -26,15 +23,10 @@ export type TCreateMenuItemRecord = {
 	location: TGeoPoint;
 };
 
-type TLeanMenuItem = Omit<TMenuItem, "id" | "restaurantId"> & {
-	_id: { toString(): string };
-	restaurant: { toString(): string };
-};
-
 /**
  * Data access for `menu_items`. Menu items are only reachable through their
  * restaurant, so every owner-facing query is scoped by **both** `ownerId` and
- * `restaurant` in the filter: an item under the wrong restaurant, or someone
+ * `restaurantId` in the filter: an item under the wrong restaurant, or someone
  * else's, is simply not found. That is why this class does not implement the
  * id-only `ICRUDRepository` signatures.
  */
@@ -42,8 +34,8 @@ type TLeanMenuItem = Omit<TMenuItem, "id" | "restaurantId"> & {
 @Injectable()
 export class MenuItemRepository {
 	constructor(
-		@InjectModel(MenuItem.name)
-		private readonly _model: Model<MenuItemDocument>,
+		@Inject(DatabaseService)
+		private readonly _databaseService: DatabaseService,
 	) {}
 
 	/** Inserts an item for `ownerId` (who must own the restaurant). */
@@ -51,13 +43,11 @@ export class MenuItemRepository {
 		ownerId: string,
 		input: TCreateMenuItemRecord,
 	): Promise<TMenuItem> {
-		const { restaurantId, ...rest } = input;
-		const doc = await this._model.create({
-			...rest,
-			ownerId,
-			restaurant: restaurantId,
-		});
-		return this._toRow(doc.toObject() as unknown as TLeanMenuItem);
+		const [row] = await this._databaseService.db
+			.insert(menuItems)
+			.values({ ...input, ownerId })
+			.returning();
+		return row;
 	}
 
 	/** The restaurant's items for its owner, sorted by category then name. */
@@ -66,27 +56,35 @@ export class MenuItemRepository {
 		restaurantId: string,
 		query: TListMenuItemsInput,
 	): Promise<TPage<TMenuItem>> {
-		if (!isValidObjectId(restaurantId)) {
+		if (!isUuid(restaurantId)) {
 			return { items: [], total: 0 };
 		}
-		const filter: FilterQuery<MenuItemDocument> = {
-			ownerId,
-			restaurant: restaurantId,
-			...(query.category ? { category: query.category } : {}),
-			...(query.isAvailable !== undefined
-				? { isAvailable: query.isAvailable }
-				: {}),
-		};
-		const [rows, total] = await Promise.all([
-			this._model
-				.find(filter)
-				.sort({ category: 1, name: 1, _id: 1 })
-				.skip(query.offset)
+		const filter = and(
+			eq(menuItems.ownerId, ownerId),
+			eq(menuItems.restaurantId, restaurantId),
+			query.category ? eq(menuItems.category, query.category) : undefined,
+			query.isAvailable !== undefined
+				? eq(menuItems.isAvailable, query.isAvailable)
+				: undefined,
+		);
+		const [rows, [totalRow]] = await Promise.all([
+			this._databaseService.db
+				.select()
+				.from(menuItems)
+				.where(filter)
+				.orderBy(
+					asc(menuItems.category),
+					asc(menuItems.name),
+					asc(menuItems.id),
+				)
 				.limit(query.limit)
-				.lean<TLeanMenuItem[]>(),
-			this._model.countDocuments(filter),
+				.offset(query.offset),
+			this._databaseService.db
+				.select({ total: count() })
+				.from(menuItems)
+				.where(filter),
 		]);
-		return { items: rows.map((row) => this._toRow(row)), total };
+		return { items: rows, total: totalRow?.total ?? 0 };
 	}
 
 	/** Null when missing, malformed ids, wrong restaurant, or not the owner's. */
@@ -98,10 +96,17 @@ export class MenuItemRepository {
 		if (!this._validIds(restaurantId, id)) {
 			return null;
 		}
-		const row = await this._model
-			.findOne({ _id: id, ownerId, restaurant: restaurantId })
-			.lean<TLeanMenuItem>();
-		return row ? this._toRow(row) : null;
+		const [row] = await this._databaseService.db
+			.select()
+			.from(menuItems)
+			.where(
+				and(
+					eq(menuItems.id, id),
+					eq(menuItems.ownerId, ownerId),
+					eq(menuItems.restaurantId, restaurantId),
+				),
+			);
+		return row ?? null;
 	}
 
 	/** Applies only the keys present; null when not found in that scope. */
@@ -114,14 +119,18 @@ export class MenuItemRepository {
 		if (!this._validIds(restaurantId, id)) {
 			return null;
 		}
-		const row = await this._model
-			.findOneAndUpdate(
-				{ _id: id, ownerId, restaurant: restaurantId },
-				{ $set: patch },
-				{ new: true },
+		const [row] = await this._databaseService.db
+			.update(menuItems)
+			.set(patch)
+			.where(
+				and(
+					eq(menuItems.id, id),
+					eq(menuItems.ownerId, ownerId),
+					eq(menuItems.restaurantId, restaurantId),
+				),
 			)
-			.lean<TLeanMenuItem>();
-		return row ? this._toRow(row) : null;
+			.returning();
+		return row ?? null;
 	}
 
 	/** True when an item was deleted from that scope. */
@@ -133,24 +142,29 @@ export class MenuItemRepository {
 		if (!this._validIds(restaurantId, id)) {
 			return false;
 		}
-		const result = await this._model.deleteOne({
-			_id: id,
-			ownerId,
-			restaurant: restaurantId,
-		});
-		return result.deletedCount === 1;
+		const rows = await this._databaseService.db
+			.delete(menuItems)
+			.where(
+				and(
+					eq(menuItems.id, id),
+					eq(menuItems.ownerId, ownerId),
+					eq(menuItems.restaurantId, restaurantId),
+				),
+			)
+			.returning({ id: menuItems.id });
+		return rows.length === 1;
 	}
 
 	/** Every item of a restaurant for the public menu, by category then name. */
 	public async listByRestaurant(restaurantId: string): Promise<TMenuItem[]> {
-		if (!isValidObjectId(restaurantId)) {
+		if (!isUuid(restaurantId)) {
 			return [];
 		}
-		const rows = await this._model
-			.find({ restaurant: restaurantId })
-			.sort({ category: 1, name: 1, _id: 1 })
-			.lean<TLeanMenuItem[]>();
-		return rows.map((row) => this._toRow(row));
+		return this._databaseService.db
+			.select()
+			.from(menuItems)
+			.where(eq(menuItems.restaurantId, restaurantId))
+			.orderBy(asc(menuItems.category), asc(menuItems.name), asc(menuItems.id));
 	}
 
 	/** Keeps the denormalized location in step with the restaurant's. */
@@ -158,29 +172,14 @@ export class MenuItemRepository {
 		restaurantId: string,
 		location: TGeoPoint,
 	): Promise<void> {
-		await this._model.updateMany(
-			{ restaurant: restaurantId },
-			{ $set: { location } },
-		);
+		await this._databaseService.db
+			.update(menuItems)
+			.set({ location })
+			.where(eq(menuItems.restaurantId, restaurantId));
 	}
 
-	/** Removes every item of a restaurant (used when the restaurant is deleted). */
-	public async deleteByRestaurant(restaurantId: string): Promise<void> {
-		await this._model.deleteMany({ restaurant: restaurantId });
-	}
-
-	/** Both path ids must be valid ObjectIds before they reach a query. */
+	/** Both path ids must be valid UUIDs before they reach a query. */
 	private _validIds(restaurantId: string, id: string): boolean {
-		return isValidObjectId(restaurantId) && isValidObjectId(id);
-	}
-
-	/** Maps a lean document to the plain `TMenuItem` row. */
-	private _toRow(row: TLeanMenuItem): TMenuItem {
-		const { _id, restaurant, ...rest } = row;
-		return {
-			id: _id.toString(),
-			restaurantId: restaurant.toString(),
-			...rest,
-		};
+		return isUuid(restaurantId) && isUuid(id);
 	}
 }

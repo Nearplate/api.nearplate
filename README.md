@@ -1,35 +1,37 @@
 # api.nearplate
 
-Nearplate API server — NestJS 10 + MongoDB (Mongoose), Redis cache, JWT roles (`admin`, `restaurant`, `user`, `guest`), with sign-in by magic link (Resend) and Google.
+Nearplate API server — NestJS 10 + Postgres (Drizzle ORM, PostGIS), Redis cache, JWT roles (`admin`, `restaurant`, `user`, `guest`), with sign-in by magic link (Resend) and Google.
 
 Conventions and architecture: [AGENTS.md](AGENTS.md).
 
 ## Prerequisites
 
 - Node.js >= 22, npm
-- Docker (for local MongoDB + Redis)
+- Docker (for local Postgres + Redis)
 
 ## Setup
 
 ```bash
 cp .env.example .env
 npm install
-npm run test:deps       # MongoDB :27017, Redis :6380 (test stack)
+npm run test:deps       # Postgres (PostGIS) :5433, Redis :6380 (test stack)
+npm run db:migrate       # applies db/migrations against DATABASE_URL
 npm run start:dev
 ```
 
-`.env.example` points at MongoDB on `localhost:27017` and Redis on `localhost:6379`; adjust `MONGODB_URI` / `REDIS_PORT` if your local services differ (the test stack publishes Redis on 6380).
+`.env.example` points at Postgres on `localhost:5432` and Redis on `localhost:6379`; adjust `DATABASE_URL` / `REDIS_PORT` if your local services differ (the test stack publishes Postgres on 5433 and Redis on 6380, so neither clashes with a developer's own instance).
 
 ## Docker
 
 ```bash
 cp .env.example .env
-docker compose up -d --build     # API on :8080 with its own MongoDB + Redis
+docker compose up -d --build     # API on :8080 with its own Postgres + Redis
+docker compose run --rm api npm run db:migrate
 docker compose logs -f api
-docker compose down              # add -v to also drop the MongoDB volume
+docker compose down              # add -v to also drop the Postgres volume
 ```
 
-Compose overrides `MONGODB_URI` and `REDIS_HOST` to its own services and runs with `NODE_ENV=production`; MongoDB and Redis are not published to the host. `test/docker-compose.yml` is a separate stack used only by the e2e tests.
+Compose overrides `DATABASE_URL` and `REDIS_HOST` to its own services and runs with `NODE_ENV=production`; Postgres and Redis are not published to the host. `test/docker-compose.yml` is a separate stack used only by the e2e tests.
 
 Because compose runs in production mode, `.env` must set `RESEND_API_KEY` (the API refuses to start without it) — see Authentication below.
 
@@ -39,14 +41,16 @@ Publish a GitHub release with a semver tag (`v1.2.3`) from `main`. The `Release`
 
 ## Scripts
 
-| Script                            | Purpose                       |
-| --------------------------------- | ----------------------------- |
-| `npm run start:dev`               | Dev server with watch         |
-| `npm run build` / `start:prod`    | Compile / run `dist`          |
-| `npm run lint` / `lint:check`     | ESLint (fix / check)          |
-| `npm run format` / `format:check` | Prettier (write / check)      |
-| `npm run test:deps`               | Start MongoDB + Redis for e2e |
-| `npm run test:e2e`                | Run the e2e suite             |
+| Script                            | Purpose                                  |
+| --------------------------------- | ---------------------------------------- |
+| `npm run start:dev`               | Dev server with watch                    |
+| `npm run build` / `start:prod`    | Compile / run `dist`                     |
+| `npm run lint` / `lint:check`     | ESLint (fix / check)                     |
+| `npm run format` / `format:check` | Prettier (write / check)                 |
+| `npm run test:deps`               | Start Postgres + Redis for e2e           |
+| `npm run test:e2e`                | Run the e2e suite                        |
+| `npm run db:generate`             | Generate a migration from `db/schema.ts` |
+| `npm run db:migrate`              | Apply migrations to `DATABASE_URL`       |
 
 ## API
 
