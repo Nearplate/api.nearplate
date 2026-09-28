@@ -1,5 +1,7 @@
+import { AddressService } from "@/services/address.service";
 import { AppService } from "@/services/app.service";
 import { AuthService } from "@/services/auth.service";
+import { CartService } from "@/services/cart.service";
 import { OrderService } from "@/services/order.service";
 import { RestaurantService } from "@/services/restaurant.service";
 import { SessionService } from "@/services/session.service";
@@ -11,6 +13,8 @@ export const Services: Provider[] = [
 	AuthService,
 	SessionService,
 	UserService,
+	AddressService,
 	OrderService,
 	RestaurantService,
+	CartService,
 ];

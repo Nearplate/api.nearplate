@@ -1,3 +1,4 @@
+import { MAX_ITEM_QUANTITY } from "@/domain/constants/cart.constants";
 import { ORDER_STATUSES } from "@/domain/enums/order-status";
 import type { TPage } from "@/domain/types/page.types";
 import type {
@@ -5,21 +6,25 @@ import type {
 	TListOrdersInput,
 	TUpdateOrderStatusInput,
 } from "@/domain/types/order.types";
-import type { TOrderWithItems } from "@/repositories/order.repository";
+import type {
+	TOrderWithItems,
+	TOrderWithRestaurantName,
+} from "@/repositories/order.repository";
 import type { TOrder } from "@db/schemas/order.schema";
 import { Injectable } from "@nestjs/common";
 import { z } from "zod";
 import { addressSchema } from "./restaurant.transformer";
 import {
+	type TCustomerOrderSummaryResponse,
 	type TOrderResponse,
 	type TOrderSummaryResponse,
+	toCustomerOrderSummaryResponse,
 	toOrderResponse,
 	toOrderSummaryResponse,
 } from "./order.dto";
 import { parseOrBadRequest } from "./parse";
 
 const _MAX_ITEMS = 50;
-const _MAX_QUANTITY = 20;
 const _DEFAULT_LIMIT = 50;
 const _MAX_LIMIT = 100;
 
@@ -34,7 +39,7 @@ const _offset = z.coerce.number().int().min(0).default(0);
 const _orderItemSchema = z
 	.object({
 		menuItemId: z.string(),
-		quantity: z.number().int().min(1).max(_MAX_QUANTITY),
+		quantity: z.number().int().min(1).max(MAX_ITEM_QUANTITY),
 	})
 	.strict();
 
@@ -58,6 +63,11 @@ const _updateStatusSchema = z
 
 export type TOrderListResponse = {
 	items: TOrderSummaryResponse[];
+	total: number;
+};
+
+export type TCustomerOrderListResponse = {
+	items: TCustomerOrderSummaryResponse[];
 	total: number;
 };
 
@@ -107,10 +117,20 @@ export class OrderTransformer {
 		return toOrderResponse(row);
 	}
 
-	/** Page of order rows (no items) → wire DTO. */
+	/** Page of a restaurant owner's order rows (no items) → wire DTO. */
 	public toOrderListResponseDTO(page: TPage<TOrder>): TOrderListResponse {
 		return {
 			items: page.items.map(toOrderSummaryResponse),
+			total: page.total,
+		};
+	}
+
+	/** Page of a customer's own order rows (no items, with restaurant name) → wire DTO. */
+	public toCustomerOrderListResponseDTO(
+		page: TPage<TOrderWithRestaurantName>,
+	): TCustomerOrderListResponse {
+		return {
+			items: page.items.map(toCustomerOrderSummaryResponse),
 			total: page.total,
 		};
 	}
