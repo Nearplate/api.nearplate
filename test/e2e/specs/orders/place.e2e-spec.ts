@@ -94,7 +94,7 @@ describe("POST /v1/orders", () => {
 		expect(res.body).toEqual({
 			statusCode: 409,
 			code: "RESTAURANT_NOT_ONLINE",
-			message: `Restaurant ${restaurant.id} is not accepting orders right now`,
+			message: `Restaurant ${restaurant.name} is not accepting orders right now`,
 		});
 	});
 
@@ -141,7 +141,7 @@ describe("POST /v1/orders", () => {
 		expect(res.body).toEqual({
 			statusCode: 400,
 			code: "MENU_ITEMS_NOT_IN_RESTAURANT",
-			message: `One or more menu items do not belong to restaurant ${restaurant.id}`,
+			message: `One or more menu items do not belong to restaurant ${restaurant.name}`,
 		});
 	});
 
