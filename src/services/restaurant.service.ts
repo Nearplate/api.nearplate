@@ -1,6 +1,13 @@
+import { S3StorageAdapter } from "@/adapters/s3-storage.adapter";
 import type { TConfig } from "@/app/modules/config/config";
 import { DatabaseService } from "@/app/modules/database";
 import { LogClass } from "@/app/modules/logger";
+import {
+	ALLOWED_IMAGE_CONTENT_TYPES,
+	MAX_UPLOAD_BYTES,
+	extensionForContentType,
+} from "@/domain/constants/upload";
+import { UploadKind } from "@/domain/enums/upload-kind";
 import type {
 	TCreateMenuItemInput,
 	TListMenuItemsInput,
@@ -15,6 +22,12 @@ import type {
 	TNearbyRestaurantsInput,
 	TUpdateRestaurantInput,
 } from "@/domain/types/restaurant.types";
+import type {
+	TCreateImageUploadInput,
+	TCreateMenuItemImageUploadInput,
+	TImageUploadResponse,
+} from "@/domain/types/upload.types";
+import { BackgroundJobHelper } from "@/helpers/background-job.helper";
 import { QrCodeHelper } from "@/helpers/qr-code.helper";
 import type { OrderStatus } from "@/domain/enums/order-status";
 import type { TListOrdersInput } from "@/domain/types/order.types";
@@ -24,14 +37,25 @@ import {
 	RestaurantRepository,
 	type TNearbyRestaurant,
 } from "@/repositories/restaurant.repository";
+import { UploadRepository } from "@/repositories/upload.repository";
 import { OrderService } from "@/services/order.service";
 import type { TQrCodeResponse } from "@/transformers/restaurant.dto";
 import type { TGeoPoint } from "@db/schemas/geo";
 import type { TMenuItem } from "@db/schemas/menu-item.schema";
 import type { TOrder } from "@db/schemas/order.schema";
 import type { TRestaurant } from "@db/schemas/restaurant.schema";
-import { Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { randomUUID } from "node:crypto";
+import {
+	BadRequestException,
+	ConflictException,
+	Inject,
+	Injectable,
+	NotFoundException,
+} from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
+
+/** Batch size for one sweep run; keeps a single cron tick bounded. */
+const _SWEEP_BATCH_SIZE = 200;
 
 /**
  * Restaurant and menu business logic. A restaurant or menu item that is
@@ -58,6 +82,12 @@ export class RestaurantService {
 		private readonly _configService: ConfigService<TConfig>,
 		@Inject(OrderService)
 		private readonly _orderService: OrderService,
+		@Inject(UploadRepository)
+		private readonly _uploadRepository: UploadRepository,
+		@Inject(S3StorageAdapter)
+		private readonly _s3StorageAdapter: S3StorageAdapter,
+		@Inject(BackgroundJobHelper)
+		private readonly _backgroundJobHelper: BackgroundJobHelper,
 	) {}
 
 	/**
@@ -110,7 +140,7 @@ export class RestaurantService {
 		id: string,
 		input: TUpdateRestaurantInput,
 	): Promise<TRestaurant> {
-		return this._databaseService.transaction(async () => {
+		const result = await this._databaseService.transaction(async () => {
 			const current = await this.get(ownerId, id);
 			const { address, coordinates, ...fields } = input;
 
@@ -132,8 +162,17 @@ export class RestaurantService {
 			if (location) {
 				await this._menuItemRepository.updateLocationByRestaurant(id, location);
 			}
-			return this.get(ownerId, id);
+			return { previous: current, restaurant: await this.get(ownerId, id) };
 		});
+		this._deleteReplacedImage(
+			result.previous.logoUrl,
+			result.restaurant.logoUrl,
+		);
+		this._deleteReplacedImage(
+			result.previous.bannerUrl,
+			result.restaurant.bannerUrl,
+		);
+		return result.restaurant;
 	}
 
 	/**
@@ -141,14 +180,17 @@ export class RestaurantService {
 	 * cascade with the restaurant at the database level.
 	 */
 	public async remove(ownerId: string, id: string): Promise<void> {
-		await this._databaseService.transaction(async () => {
-			const current = await this.get(ownerId, id);
+		const current = await this._databaseService.transaction(async () => {
+			const restaurant = await this.get(ownerId, id);
 			const deleted = await this._restaurantRepository.delete(ownerId, id);
 			if (!deleted) {
 				throw new NotFoundException();
 			}
-			await this._addressRepository.delete(current.address.id);
+			await this._addressRepository.delete(restaurant.address.id);
+			return restaurant;
 		});
+		this._deleteReplacedImage(current.logoUrl, null);
+		this._deleteReplacedImage(current.bannerUrl, null);
 	}
 
 	/** Puts the caller's restaurant online or offline. */
@@ -231,6 +273,7 @@ export class RestaurantService {
 		itemId: string,
 		input: TUpdateMenuItemInput,
 	): Promise<TMenuItem> {
+		const current = await this.getMenuItem(ownerId, restaurantId, itemId);
 		const item = await this._menuItemRepository.updateInRestaurant(
 			ownerId,
 			restaurantId,
@@ -240,6 +283,7 @@ export class RestaurantService {
 		if (!item) {
 			throw new NotFoundException();
 		}
+		this._deleteReplacedImage(current.imageUrl, item.imageUrl);
 		return item;
 	}
 
@@ -259,6 +303,7 @@ export class RestaurantService {
 		restaurantId: string,
 		itemId: string,
 	): Promise<void> {
+		const item = await this.getMenuItem(ownerId, restaurantId, itemId);
 		const deleted = await this._menuItemRepository.deleteInRestaurant(
 			ownerId,
 			restaurantId,
@@ -267,6 +312,7 @@ export class RestaurantService {
 		if (!deleted) {
 			throw new NotFoundException();
 		}
+		this._deleteReplacedImage(item.imageUrl, null);
 	}
 
 	/** Public menu of a restaurant by slug, sorted by category then name. */
@@ -317,6 +363,308 @@ export class RestaurantService {
 			restaurantId,
 			orderId,
 			status,
+		);
+	}
+
+	/**
+	 * Issues a presigned POST for a new logo/banner and records it as pending.
+	 * 404 if the restaurant is missing or not the caller's; 400 for a
+	 * disallowed content type or an oversize request.
+	 */
+	public async createImageUpload(
+		ownerId: string,
+		id: string,
+		input: TCreateImageUploadInput,
+	): Promise<TImageUploadResponse> {
+		const restaurant = await this.get(ownerId, id);
+		if (
+			!ALLOWED_IMAGE_CONTENT_TYPES.includes(
+				input.contentType as (typeof ALLOWED_IMAGE_CONTENT_TYPES)[number],
+			)
+		) {
+			throw new BadRequestException();
+		}
+		const maxBytes = MAX_UPLOAD_BYTES[input.kind];
+		if (input.size <= 0 || input.size > maxBytes) {
+			throw new BadRequestException();
+		}
+
+		const ttlSeconds = this._configService.getOrThrow<number>(
+			"UPLOAD_URL_TTL_SECONDS",
+		);
+		const pendingTtlSeconds = this._configService.getOrThrow<number>(
+			"UPLOAD_PENDING_TTL_SECONDS",
+		);
+		const extension = extensionForContentType(input.contentType);
+		const objectKey = `restaurants/${restaurant.id}/${input.kind}/${randomUUID()}.${extension}`;
+		const expiresAt = new Date(Date.now() + pendingTtlSeconds * 1000);
+
+		const [upload, presignedPost] = await Promise.all([
+			this._uploadRepository.create({
+				ownerId,
+				restaurantId: restaurant.id,
+				kind: input.kind,
+				objectKey,
+				contentType: input.contentType,
+				expiresAt,
+			}),
+			this._s3StorageAdapter.createPresignedPost(
+				objectKey,
+				input.contentType,
+				maxBytes,
+				ttlSeconds,
+			),
+		]);
+
+		return {
+			uploadId: upload.id,
+			url: presignedPost.url,
+			fields: presignedPost.fields,
+			publicUrl: this._s3StorageAdapter.publicUrl(objectKey),
+			expiresAt: upload.expiresAt,
+		};
+	}
+
+	/**
+	 * Confirms a pending upload actually landed in S3, then atomically swaps
+	 * it onto the restaurant's `logoUrl`/`bannerUrl` in place of the previous
+	 * image, which is deleted in the background after commit.
+	 */
+	public async confirmImageUpload(
+		ownerId: string,
+		id: string,
+		uploadId: string,
+	): Promise<TRestaurant> {
+		const restaurant = await this.get(ownerId, id);
+		const pending = await this._uploadRepository.findPending(
+			ownerId,
+			restaurant.id,
+			uploadId,
+		);
+		if (!pending) {
+			throw new NotFoundException();
+		}
+		const head = await this._s3StorageAdapter.headObject(pending.objectKey);
+		if (!head || head.contentType !== pending.contentType) {
+			throw new ConflictException();
+		}
+		const publicUrl = this._s3StorageAdapter.publicUrl(pending.objectKey);
+		const field = pending.kind === UploadKind.Logo ? "logoUrl" : "bannerUrl";
+		const previousUrl =
+			pending.kind === UploadKind.Logo
+				? restaurant.logoUrl
+				: restaurant.bannerUrl;
+
+		const updated = await this._databaseService.transaction(async () => {
+			const consumed = await this._uploadRepository.consume(
+				ownerId,
+				restaurant.id,
+				uploadId,
+			);
+			if (!consumed) {
+				throw new NotFoundException();
+			}
+			const result = await this._restaurantRepository.update(
+				ownerId,
+				restaurant.id,
+				{ [field]: publicUrl },
+			);
+			if (!result) {
+				throw new NotFoundException();
+			}
+			return result;
+		});
+		this._deleteReplacedImage(previousUrl, publicUrl);
+		return updated;
+	}
+
+	/** Deletes a pending upload's S3 object and row; 404 if already gone. */
+	public async cancelImageUpload(
+		ownerId: string,
+		id: string,
+		uploadId: string,
+	): Promise<void> {
+		const restaurant = await this.get(ownerId, id);
+		const consumed = await this._uploadRepository.consume(
+			ownerId,
+			restaurant.id,
+			uploadId,
+		);
+		if (!consumed) {
+			throw new NotFoundException();
+		}
+		await this._s3StorageAdapter.deleteObjects([consumed.objectKey]);
+	}
+
+	/**
+	 * Issues a presigned POST for a menu item's photo and records it as
+	 * pending. 404 if the item is missing or not the caller's; 400 for a
+	 * disallowed content type or an oversize request.
+	 */
+	public async createMenuItemImageUpload(
+		ownerId: string,
+		restaurantId: string,
+		itemId: string,
+		input: TCreateMenuItemImageUploadInput,
+	): Promise<TImageUploadResponse> {
+		const item = await this.getMenuItem(ownerId, restaurantId, itemId);
+		if (
+			!ALLOWED_IMAGE_CONTENT_TYPES.includes(
+				input.contentType as (typeof ALLOWED_IMAGE_CONTENT_TYPES)[number],
+			)
+		) {
+			throw new BadRequestException();
+		}
+		const maxBytes = MAX_UPLOAD_BYTES[UploadKind.MenuItem];
+		if (input.size <= 0 || input.size > maxBytes) {
+			throw new BadRequestException();
+		}
+
+		const ttlSeconds = this._configService.getOrThrow<number>(
+			"UPLOAD_URL_TTL_SECONDS",
+		);
+		const pendingTtlSeconds = this._configService.getOrThrow<number>(
+			"UPLOAD_PENDING_TTL_SECONDS",
+		);
+		const extension = extensionForContentType(input.contentType);
+		const objectKey = `restaurants/${restaurantId}/menu-items/${item.id}/${randomUUID()}.${extension}`;
+		const expiresAt = new Date(Date.now() + pendingTtlSeconds * 1000);
+
+		const [upload, presignedPost] = await Promise.all([
+			this._uploadRepository.create({
+				ownerId,
+				restaurantId,
+				menuItemId: item.id,
+				kind: UploadKind.MenuItem,
+				objectKey,
+				contentType: input.contentType,
+				expiresAt,
+			}),
+			this._s3StorageAdapter.createPresignedPost(
+				objectKey,
+				input.contentType,
+				maxBytes,
+				ttlSeconds,
+			),
+		]);
+
+		return {
+			uploadId: upload.id,
+			url: presignedPost.url,
+			fields: presignedPost.fields,
+			publicUrl: this._s3StorageAdapter.publicUrl(objectKey),
+			expiresAt: upload.expiresAt,
+		};
+	}
+
+	/**
+	 * Confirms a pending upload actually landed in S3, then atomically swaps
+	 * it onto the item's `imageUrl` in place of the previous photo, which is
+	 * deleted in the background after commit.
+	 */
+	public async confirmMenuItemImageUpload(
+		ownerId: string,
+		restaurantId: string,
+		itemId: string,
+		uploadId: string,
+	): Promise<TMenuItem> {
+		const item = await this.getMenuItem(ownerId, restaurantId, itemId);
+		const pending = await this._uploadRepository.findPending(
+			ownerId,
+			restaurantId,
+			uploadId,
+			item.id,
+		);
+		if (!pending) {
+			throw new NotFoundException();
+		}
+		const head = await this._s3StorageAdapter.headObject(pending.objectKey);
+		if (!head || head.contentType !== pending.contentType) {
+			throw new ConflictException();
+		}
+		const publicUrl = this._s3StorageAdapter.publicUrl(pending.objectKey);
+
+		const updated = await this._databaseService.transaction(async () => {
+			const consumed = await this._uploadRepository.consume(
+				ownerId,
+				restaurantId,
+				uploadId,
+				item.id,
+			);
+			if (!consumed) {
+				throw new NotFoundException();
+			}
+			const result = await this._menuItemRepository.updateInRestaurant(
+				ownerId,
+				restaurantId,
+				itemId,
+				{ imageUrl: publicUrl },
+			);
+			if (!result) {
+				throw new NotFoundException();
+			}
+			return result;
+		});
+		this._deleteReplacedImage(item.imageUrl, publicUrl);
+		return updated;
+	}
+
+	/** Deletes a menu item's pending upload's S3 object and row; 404 if already gone. */
+	public async cancelMenuItemImageUpload(
+		ownerId: string,
+		restaurantId: string,
+		itemId: string,
+		uploadId: string,
+	): Promise<void> {
+		await this.getMenuItem(ownerId, restaurantId, itemId);
+		const consumed = await this._uploadRepository.consume(
+			ownerId,
+			restaurantId,
+			uploadId,
+			itemId,
+		);
+		if (!consumed) {
+			throw new NotFoundException();
+		}
+		await this._s3StorageAdapter.deleteObjects([consumed.objectKey]);
+	}
+
+	/**
+	 * Deletes every pending upload past its `expiresAt`, oldest first. Objects
+	 * are deleted before rows, so a mid-sweep failure leaves the row behind
+	 * for the next run rather than losing track of an orphaned object.
+	 */
+	public async sweepExpiredUploads(): Promise<void> {
+		const expired = await this._uploadRepository.listExpired(_SWEEP_BATCH_SIZE);
+		if (expired.length === 0) {
+			return;
+		}
+		await this._s3StorageAdapter.deleteObjects(
+			expired.map((upload) => upload.objectKey),
+		);
+		await this._uploadRepository.deleteByIds(
+			expired.map((upload) => upload.id),
+		);
+	}
+
+	/**
+	 * Deletes `previousUrl`'s object in the background when it differs from
+	 * `nextUrl` and is one of our own objects (never an externally-pasted URL).
+	 */
+	private _deleteReplacedImage(
+		previousUrl: string | null,
+		nextUrl: string | null,
+	): void {
+		if (!previousUrl || previousUrl === nextUrl) {
+			return;
+		}
+		const key = this._s3StorageAdapter.keyFromPublicUrl(previousUrl);
+		if (!key) {
+			return;
+		}
+		this._backgroundJobHelper.run(
+			() => this._s3StorageAdapter.deleteObjects([key]),
+			{ name: `delete-image:${key}` },
 		);
 	}
 

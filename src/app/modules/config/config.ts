@@ -92,6 +92,32 @@ export const ResendConfigSchema = z.object({
 	RESEND_FROM_EMAIL: _str.default("Nearplate <noreply@nearplate.co.in>"),
 });
 
+/**
+ * Public S3 (or S3-compatible: MinIO, R2) bucket for restaurant logo/banner
+ * uploads. `S3_PUBLIC_BASE_URL` is the origin `S3StorageAdapter` builds public
+ * URLs from and matches URLs against -- a bucket origin or a CDN in front of
+ * it. Credentials are optional: unset falls back to the AWS default
+ * credential chain (instance role, etc).
+ */
+export const S3ConfigSchema = z.object({
+	S3_BUCKET: _str.min(1),
+	S3_REGION: _str.min(1),
+	S3_PUBLIC_BASE_URL: _str.url(),
+	S3_ENDPOINT: _str.url().optional(),
+	S3_FORCE_PATH_STYLE: z
+		.enum(["true", "false"])
+		.transform((v) => v === "true")
+		.default("false"),
+	S3_ACCESS_KEY_ID: _str.optional(),
+	S3_SECRET_ACCESS_KEY: _str.optional(),
+});
+
+/** Presigned-upload lifetime and how long an unconfirmed upload is kept. */
+export const UploadConfigSchema = z.object({
+	UPLOAD_URL_TTL_SECONDS: _seconds.default(600), // 10 minutes
+	UPLOAD_PENDING_TTL_SECONDS: _seconds.default(3600), // 1 hour
+});
+
 export const ConfigSchema = NodeConfigSchema.merge(LogConfigSchema)
 	.merge(ServerAppConfigSchema)
 	.merge(CorsConfigSchema)
@@ -102,6 +128,8 @@ export const ConfigSchema = NodeConfigSchema.merge(LogConfigSchema)
 	.merge(AuthConfigSchema)
 	.merge(GoogleConfigSchema)
 	.merge(ResendConfigSchema)
+	.merge(S3ConfigSchema)
+	.merge(UploadConfigSchema)
 	.superRefine((config, ctx) => {
 		if (config.NODE_ENV === "production" && !config.RESEND_API_KEY) {
 			ctx.addIssue({

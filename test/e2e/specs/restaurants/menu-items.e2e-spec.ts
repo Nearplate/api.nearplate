@@ -330,6 +330,33 @@ describe("restaurant menu items (/restaurants/:id/menu/items)", () => {
 			});
 		});
 
+		it("deletes the previously owned object when imageUrl is cleared", async () => {
+			const { http, s3 } = getE2eApp();
+			const { restaurant, auth } = await owner();
+			const item = await create(auth, restaurant.id);
+			const upload = await http
+				.post(`${itemsUrl(restaurant.id, item.id)}/uploads`)
+				.set("Authorization", auth)
+				.send({ contentType: "image/png", size: 1024 })
+				.expect(201);
+			const key = s3.keyFromPublicUrl(upload.body.publicUrl) as string;
+			s3.simulateUpload(key, 1024, "image/png");
+			await http
+				.post(
+					`${itemsUrl(restaurant.id, item.id)}/uploads/${upload.body.uploadId}/confirm`,
+				)
+				.set("Authorization", auth)
+				.expect(200);
+
+			await http
+				.patch(itemsUrl(restaurant.id, item.id))
+				.set("Authorization", auth)
+				.send({ imageUrl: null })
+				.expect(200);
+
+			await s3.waitForDelete(key);
+		});
+
 		it("toggles availability and rejects a non-boolean", async () => {
 			const { http } = getE2eApp();
 			const { restaurant, auth } = await owner();
@@ -388,6 +415,32 @@ describe("restaurant menu items (/restaurants/:id/menu/items)", () => {
 			await http.delete(url).set("Authorization", auth).expect(204);
 			await http.get(url).set("Authorization", auth).expect(404);
 			await http.delete(url).set("Authorization", auth).expect(404);
+		});
+
+		it("deletes the item's image object", async () => {
+			const { http, s3 } = getE2eApp();
+			const { restaurant, auth } = await owner();
+			const item = await create(auth, restaurant.id);
+			const upload = await http
+				.post(`${itemsUrl(restaurant.id, item.id)}/uploads`)
+				.set("Authorization", auth)
+				.send({ contentType: "image/png", size: 1024 })
+				.expect(201);
+			const key = s3.keyFromPublicUrl(upload.body.publicUrl) as string;
+			s3.simulateUpload(key, 1024, "image/png");
+			await http
+				.post(
+					`${itemsUrl(restaurant.id, item.id)}/uploads/${upload.body.uploadId}/confirm`,
+				)
+				.set("Authorization", auth)
+				.expect(200);
+
+			await http
+				.delete(itemsUrl(restaurant.id, item.id))
+				.set("Authorization", auth)
+				.expect(204);
+
+			await s3.waitForDelete(key);
 		});
 	});
 });
