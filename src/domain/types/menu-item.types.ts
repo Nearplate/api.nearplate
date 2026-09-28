@@ -4,6 +4,8 @@ import type { FoodType } from "@/domain/enums/food-type";
 export type TCreateMenuItemInput = {
 	name: string;
 	category: string;
+	description?: string | null;
+	imageUrl?: string | null;
 	/** Integer paise (1/100 rupee). */
 	priceInPaise: number;
 	foodType: FoodType;
@@ -14,6 +16,8 @@ export type TCreateMenuItemInput = {
 export type TUpdateMenuItemInput = Partial<{
 	name: string;
 	category: string;
+	description: string | null;
+	imageUrl: string | null;
 	priceInPaise: number;
 	foodType: FoodType;
 	isAvailable: boolean;

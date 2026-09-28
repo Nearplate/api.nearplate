@@ -15,6 +15,13 @@
       "when": 1790570046670,
       "tag": "0001_fixed_quasimodo",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1790573581259,
+      "tag": "0002_remarkable_psynapse",
+      "breakpoints": true
     }
   ]
 }

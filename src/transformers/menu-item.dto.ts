@@ -10,6 +10,8 @@ const _menuItemSchema = z.object({
 	restaurantId: z.string(),
 	name: z.string(),
 	category: z.string(),
+	description: z.string().nullable(),
+	imageUrl: z.string().nullable(),
 	priceInPaise: z.number().int(),
 	foodType: z.enum(FOOD_TYPES),
 	isAvailable: z.boolean(),

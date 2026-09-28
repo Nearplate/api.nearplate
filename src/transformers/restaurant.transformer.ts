@@ -45,6 +45,8 @@ const _DEFAULT_RADIUS_KM = 5;
 const _MAX_RADIUS_KM = 25;
 const _NEARBY_DEFAULT_LIMIT = 20;
 const _NEARBY_MAX_LIMIT = 50;
+const _MAX_DESCRIPTION = 500;
+const _MAX_URL = 2048;
 
 const _line = z.string().trim().min(1).max(_MAX_LINE);
 const _short = z.string().trim().min(1).max(_MAX_SHORT);
@@ -81,12 +83,19 @@ const _cuisines = z
 	.array(z.string().trim().toLowerCase().min(1).max(_MAX_CUISINE))
 	.min(1)
 	.max(_MAX_CUISINES);
+/** Nullable, optional text shown on the public page. */
+const _description = z.string().trim().max(_MAX_DESCRIPTION).nullable();
+/** Nullable, optional image URL (logo, banner, menu-item photo). */
+const _imageUrl = z.string().url().max(_MAX_URL).nullable();
 
 const _createRestaurantSchema = z
 	.object({
 		name: _name,
 		cuisines: _cuisines,
 		isPureVeg: z.boolean(),
+		description: _description.optional(),
+		logoUrl: _imageUrl.optional(),
+		bannerUrl: _imageUrl.optional(),
 		coordinates: _coordinates,
 		address: _addressSchema,
 	})
@@ -97,6 +106,9 @@ const _updateRestaurantSchema = z
 		name: _name.optional(),
 		cuisines: _cuisines.optional(),
 		isPureVeg: z.boolean().optional(),
+		description: _description.optional(),
+		logoUrl: _imageUrl.optional(),
+		bannerUrl: _imageUrl.optional(),
 		coordinates: _coordinates.optional(),
 		address: _addressSchema.partial().optional(),
 	})
@@ -121,6 +133,8 @@ const _createMenuItemSchema = z
 	.object({
 		name: _name,
 		category: _category,
+		description: _description.optional(),
+		imageUrl: _imageUrl.optional(),
 		priceInPaise: _price,
 		foodType: _foodType,
 		isAvailable: z.boolean().default(true),
@@ -131,6 +145,8 @@ const _updateMenuItemSchema = z
 	.object({
 		name: _name.optional(),
 		category: _category.optional(),
+		description: _description.optional(),
+		imageUrl: _imageUrl.optional(),
 		priceInPaise: _price.optional(),
 		foodType: _foodType.optional(),
 		isAvailable: z.boolean().optional(),
@@ -223,6 +239,11 @@ export class RestaurantTransformer implements ICRUDTransformer<
 			...(data.name !== undefined ? { name: data.name } : {}),
 			...(data.cuisines !== undefined ? { cuisines: data.cuisines } : {}),
 			...(data.isPureVeg !== undefined ? { isPureVeg: data.isPureVeg } : {}),
+			...(data.description !== undefined
+				? { description: data.description }
+				: {}),
+			...(data.logoUrl !== undefined ? { logoUrl: data.logoUrl } : {}),
+			...(data.bannerUrl !== undefined ? { bannerUrl: data.bannerUrl } : {}),
 			...(data.coordinates !== undefined
 				? { coordinates: data.coordinates }
 				: {}),
@@ -323,6 +344,10 @@ export class RestaurantTransformer implements ICRUDTransformer<
 		const input: TUpdateMenuItemInput = {
 			...(data.name !== undefined ? { name: data.name } : {}),
 			...(data.category !== undefined ? { category: data.category } : {}),
+			...(data.description !== undefined
+				? { description: data.description }
+				: {}),
+			...(data.imageUrl !== undefined ? { imageUrl: data.imageUrl } : {}),
 			...(data.priceInPaise !== undefined
 				? { priceInPaise: data.priceInPaise }
 				: {}),

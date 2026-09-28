@@ -17,6 +17,8 @@ export type TCreateMenuItemRecord = {
 	restaurantId: string;
 	name: string;
 	category: string;
+	description?: string | null;
+	imageUrl?: string | null;
 	priceInPaise: number;
 	foodType: FoodType;
 	isAvailable: boolean;

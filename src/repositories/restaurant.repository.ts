@@ -24,6 +24,9 @@ export type TCreateRestaurantRecord = {
 	name: string;
 	cuisines: string[];
 	isPureVeg: boolean;
+	description?: string | null;
+	logoUrl?: string | null;
+	bannerUrl?: string | null;
 	location: TGeoPoint;
 	addressId: string;
 };
@@ -32,6 +35,9 @@ export type TUpdateRestaurantRecord = Partial<{
 	name: string;
 	cuisines: string[];
 	isPureVeg: boolean;
+	description: string | null;
+	logoUrl: string | null;
+	bannerUrl: string | null;
 	location: TGeoPoint;
 	status: RestaurantStatus;
 }>;

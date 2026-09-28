@@ -79,6 +79,9 @@ export class RestaurantService implements ICRUDService<
 				name: input.name,
 				cuisines: input.cuisines,
 				isPureVeg: input.isPureVeg,
+				description: input.description,
+				logoUrl: input.logoUrl,
+				bannerUrl: input.bannerUrl,
 				location: this._toPoint(input.coordinates),
 				addressId: address.id,
 			});
