@@ -2,6 +2,7 @@ import type { TNearbyRestaurant } from "@/repositories/restaurant.repository";
 import type { TRestaurant } from "@db/schemas/restaurant.schema";
 import { z } from "zod";
 import { RESTAURANT_STATUSES } from "@/domain/enums/restaurant-status";
+import type { TImageUploadResponse as TImageUploadInput } from "@/domain/types/upload.types";
 
 const _date = z.coerce.date().transform((d) => d.toISOString());
 
@@ -73,4 +74,21 @@ export type TQrCodeResponse = z.infer<typeof _qrCodeSchema>;
 /** Validates the outgoing QR code payload before it reaches the wire. */
 export function toQrCodeResponse(data: TQrCodeResponse): TQrCodeResponse {
 	return _qrCodeSchema.parse(data);
+}
+
+const _imageUploadSchema = z.object({
+	uploadId: z.string(),
+	url: z.string(),
+	fields: z.record(z.string()),
+	publicUrl: z.string(),
+	expiresAt: _date,
+});
+
+export type TImageUploadResponse = z.infer<typeof _imageUploadSchema>;
+
+/** Validates the outgoing presigned-post payload before it reaches the wire. */
+export function toImageUploadResponse(
+	data: TImageUploadInput,
+): TImageUploadResponse {
+	return _imageUploadSchema.parse(data);
 }

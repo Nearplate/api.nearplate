@@ -25,6 +25,14 @@ function applyTestEnv() {
 		GOOGLE_CLIENT_ID: "e2e-client-id",
 		GOOGLE_CLIENT_SECRET: "e2e-client-secret",
 		GOOGLE_REDIRECT_URI: "http://localhost:3400/auth/google/callback",
+		// S3StorageAdapter itself is faked in the harness; these just satisfy
+		// config validation at boot.
+		S3_BUCKET: "e2e-bucket",
+		S3_REGION: "us-east-1",
+		S3_PUBLIC_BASE_URL: "https://e2e-bucket.s3.us-east-1.amazonaws.com",
+		S3_FORCE_PATH_STYLE: "false",
+		UPLOAD_URL_TTL_SECONDS: "600",
+		UPLOAD_PENDING_TTL_SECONDS: "3600",
 	});
 
 	delete process.env.LOKI_HOST;

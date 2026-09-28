@@ -95,6 +95,13 @@ New Drizzle tables go in a new `db/schemas/{name}.schema.ts` and are re-exported
 - `GET restaurants/nearby` uses PostGIS `ST_DWithin`/`ST_Distance` on `location::geography` (`radiusKm` ≤ 25, online only, nearest first).
 - Slugs come from the name (`SlugHelper`), retry with a random suffix on collision, and never change on rename.
 
+## Uploads
+
+- Logos, banners and menu-item photos upload straight from the browser to a public S3 bucket via a presigned POST; the API never sees the file bytes. Restaurant flow: `POST :id/uploads {kind, contentType, size}` (`kind` is `logo`|`banner`) → 201 with a presigned POST (`url`, `fields`, `publicUrl`, `expiresAt`) and a pending `uploads` row → browser POSTs the file to S3 → `POST :id/uploads/:uploadId/confirm` (200) verifies the object via `headObject` (409 if missing/mismatched), then in one transaction deletes the pending row and sets `logoUrl`/`bannerUrl`. Menu-item photos mirror this at `POST/DELETE :id/menu/items/:itemId/uploads[/:uploadId[/confirm]]` -- no `kind` in the body, since an item has one photo slot -- and confirm sets the item's `imageUrl`. All routes are `@Roles(AuthRole.Restaurant)`.
+- `uploads` table (`db/schemas/upload.schema.ts`): pending uploads only, `ownerId`→users, `restaurantId`→restaurants and `menuItemId`→menu_items (both `ON DELETE set null`, so a row outlives a deleted restaurant/item and still gets swept), `kind` enum `logo|banner|menu_item`, unique `objectKey`, `contentType`, `expiresAt` (indexed), `createdAt`.
+- `S3StorageAdapter` (`src/adapters/s3-storage.adapter.ts`) wraps `createPresignedPost`/`headObject`/`deleteObjects`/`publicUrl`/`keyFromPublicUrl`; `keyFromPublicUrl` returns `null` for URLs that are not ours, so an owner-pasted external URL is never deleted. Keys are server-generated (`restaurants/{restaurantId}/{kind}/{uuid}.{ext}`, or `restaurants/{restaurantId}/menu-items/{itemId}/{uuid}.{ext}` for a menu item) — the client never supplies a key or filename.
+- Cleanup runs in three places, all via `RestaurantService`: `cancelImageUpload`/`cancelMenuItemImageUpload` (explicit cancel, 204), `confirmImageUpload`/`confirmMenuItemImageUpload`/`update`/`updateMenuItem`/`remove`/`removeMenuItem` (replaced or removed image deleted from S3 through `BackgroundJobHelper` after the transaction commits), and `UploadCleanupSubscriber` (`sweepExpiredUploads`, every 10 min) for abandoned pending rows past `expiresAt`.
+
 ## Auth
 
 - **Roles**: `admin`, `restaurant`, `user` (stored in `users`, one account per email, one role) and `guest` (anonymous signed token, no row). One JWT secret per role; `admin` is **never** assignable through the API — set it in the database.
