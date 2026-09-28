@@ -78,7 +78,7 @@ describe("google login", () => {
 		await verify("nope", state).expect(401);
 	});
 
-	it("creates a verified user from the Google profile", async () => {
+	it("creates a verified but unonboarded user from the Google profile", async () => {
 		const res = await login("tok-1");
 		expect(res.status).toBe(200);
 		expect(res.body).toMatchObject({
@@ -88,7 +88,7 @@ describe("google login", () => {
 				role: "user",
 				firstName: "Gina",
 				lastName: "Google",
-				isOnboarded: true,
+				isOnboarded: false,
 				avatarUrl: "https://example.com/gina.png",
 			},
 			expiresIn: 900,
@@ -123,6 +123,14 @@ describe("google login", () => {
 		expect(res.body.user.avatarUrl).toBe(CLAIMS.picture);
 	});
 
+	it("onboards an existing unonboarded user signing in with Google", async () => {
+		const { seedUser } = getE2eApp();
+		await seedUser({ email: CLAIMS.email });
+		const res = await login("tok-1");
+		expect(res.status).toBe(200);
+		expect(res.body.user.isOnboarded).toBe(true);
+	});
+
 	it("prefers given_name/family_name over splitting the full name", async () => {
 		const res = await login("tok-1", undefined, {
 			...CLAIMS,
@@ -137,13 +145,13 @@ describe("google login", () => {
 		});
 	});
 
-	it("leaves lastName null and still onboards for a single-word name", async () => {
+	it("leaves lastName null for a single-word name", async () => {
 		const res = await login("tok-1", undefined, { ...CLAIMS, name: "Gina" });
 		expect(res.status).toBe(200);
 		expect(res.body.user).toMatchObject({
 			firstName: "Gina",
 			lastName: null,
-			isOnboarded: true,
+			isOnboarded: false,
 		});
 	});
 
@@ -176,11 +184,18 @@ describe("google login", () => {
 		expect(res.status).toBe(401);
 	});
 
-	it("reports a role mismatch without signing in", async () => {
-		const { seedUser } = getE2eApp();
-		await seedUser({ email: CLAIMS.email, role: AuthRole.Restaurant });
+	it("signs an existing account in under its real role, ignoring the picked role", async () => {
+		const { seedUser, app } = getE2eApp();
+		const existing = await seedUser({
+			email: CLAIMS.email,
+			role: AuthRole.Restaurant,
+		});
 		const res = await login("tok-1", "user");
 		expect(res.status).toBe(200);
-		expect(res.body).toEqual({ status: "role_mismatch", role: "restaurant" });
+		expect(res.body.status).toBe("authenticated");
+		expect(res.body.user.id).toBe(existing.id);
+		expect(res.body.user.role).toBe("restaurant");
+		const allUsers = await app.get(UserRepository).findByEmail(CLAIMS.email);
+		expect(allUsers?.id).toBe(existing.id);
 	});
 });
