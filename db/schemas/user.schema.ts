@@ -1,6 +1,8 @@
 import { AuthRole } from "@/domain/enums/auth-role";
+import { USER_GENDERS, type UserGender } from "@/domain/enums/user-gender";
 import {
 	boolean,
+	date,
 	pgEnum,
 	pgTable,
 	text,
@@ -17,6 +19,7 @@ export const USER_ROLES = [
 export type TUserRole = (typeof USER_ROLES)[number];
 
 export const userRoleEnum = pgEnum("user_role", USER_ROLES);
+export const userGenderEnum = pgEnum("user_gender", USER_GENDERS);
 
 /**
  * One account per email, with exactly one role. `admin` is never assigned by
@@ -35,6 +38,13 @@ export const users = pgTable("users", {
 	avatarUrl: text(),
 	/** Google's stable subject id. Unique when present. */
 	googleSub: text().unique(),
+	/** E.164-ish digits, optionally `+`-prefixed. Null until the user sets it. */
+	phoneNumber: text(),
+	/** `YYYY-MM-DD`, stored as a plain date (no timezone) to avoid drift. */
+	dateOfBirth: date({ mode: "string" }),
+	/** `YYYY-MM-DD`, same string-mode date as `dateOfBirth`. */
+	anniversaryDate: date({ mode: "string" }),
+	gender: userGenderEnum(),
 	/** Set once the user proved control of the email (magic link or Google). */
 	emailVerifiedAt: timestamp({ withTimezone: true }),
 	lastLoginAt: timestamp({ withTimezone: true }),
@@ -55,6 +65,10 @@ export type TUser = {
 	isOnboarded: boolean;
 	avatarUrl: string | null;
 	googleSub: string | null;
+	phoneNumber: string | null;
+	dateOfBirth: string | null;
+	anniversaryDate: string | null;
+	gender: UserGender | null;
 	emailVerifiedAt: Date | null;
 	lastLoginAt: Date | null;
 	createdAt: Date;

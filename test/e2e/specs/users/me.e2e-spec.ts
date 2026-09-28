@@ -14,13 +14,17 @@ describe("users/me", () => {
 			.set("Authorization", auth(user.accessToken))
 			.expect(200);
 		expect(Object.keys(res.body).sort()).toEqual([
+			"anniversaryDate",
 			"avatarUrl",
 			"createdAt",
+			"dateOfBirth",
 			"email",
 			"firstName",
+			"gender",
 			"id",
 			"isOnboarded",
 			"lastName",
+			"phoneNumber",
 			"role",
 		]);
 		expect(res.body).toMatchObject({
@@ -43,15 +47,42 @@ describe("users/me", () => {
 				firstName: "Bobby",
 				lastName: "Baker",
 				avatarUrl: "https://example.com/b.png",
+				phoneNumber: "+919876543210",
+				dateOfBirth: "1990-05-15",
+				anniversaryDate: "2015-11-20",
+				gender: "male",
 			})
 			.expect(200);
 		expect(res.body).toMatchObject({
 			firstName: "Bobby",
 			lastName: "Baker",
 			avatarUrl: "https://example.com/b.png",
+			phoneNumber: "+919876543210",
+			dateOfBirth: "1990-05-15",
+			anniversaryDate: "2015-11-20",
+			gender: "male",
 		});
 		const again = await http.get("/v1/users/me").set("Authorization", header);
 		expect(again.body.firstName).toBe("Bobby");
+		expect(again.body.phoneNumber).toBe("+919876543210");
+	});
+
+	it("PATCH clears fields by setting them to null", async () => {
+		const { http, seedUser } = getE2eApp();
+		const user = await seedUser();
+		const header = auth(user.accessToken);
+		await http
+			.patch("/v1/users/me")
+			.set("Authorization", header)
+			.send({ phoneNumber: "+919876543210", gender: "male" })
+			.expect(200);
+		const res = await http
+			.patch("/v1/users/me")
+			.set("Authorization", header)
+			.send({ phoneNumber: null, gender: null })
+			.expect(200);
+		expect(res.body.phoneNumber).toBeNull();
+		expect(res.body.gender).toBeNull();
 	});
 
 	it.each([
@@ -60,6 +91,13 @@ describe("users/me", () => {
 		[{ avatarUrl: "not a url" }],
 		[{ role: "admin" }],
 		[{ name: "legacy field" }],
+		[{ phoneNumber: "abc" }],
+		[{ phoneNumber: "123" }],
+		[{ dateOfBirth: "2999-01-01" }],
+		[{ dateOfBirth: "1800-01-01" }],
+		[{ dateOfBirth: "not-a-date" }],
+		[{ anniversaryDate: "2999-01-01" }],
+		[{ gender: "unknown" }],
 	])("rejects invalid PATCH body %j with 400", async (body) => {
 		const { http, seedUser } = getE2eApp();
 		const user = await seedUser();

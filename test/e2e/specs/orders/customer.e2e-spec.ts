@@ -36,6 +36,7 @@ describe("customer order routes", () => {
 				first.id,
 			]);
 			expect(res.body.items[0].items).toBeUndefined();
+			expect(res.body.items[0].restaurantName).toBe(restaurant.name);
 		});
 
 		it("returns 401 without a token", async () => {

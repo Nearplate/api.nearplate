@@ -308,6 +308,33 @@ describe("owner restaurants", () => {
 			});
 		});
 
+		it("deletes the previously owned object when logoUrl is cleared", async () => {
+			const { http, s3 } = getE2eApp();
+			const { auth } = await owner();
+			const r = await create(auth);
+			const created = await http
+				.post(`/v1/restaurants/${r.id}/uploads`)
+				.set("Authorization", auth)
+				.send({ kind: "logo", contentType: "image/png", size: 1024 })
+				.expect(201);
+			const key = s3.keyFromPublicUrl(created.body.publicUrl) as string;
+			s3.simulateUpload(key, 1024, "image/png");
+			await http
+				.post(
+					`/v1/restaurants/${r.id}/uploads/${created.body.uploadId}/confirm`,
+				)
+				.set("Authorization", auth)
+				.expect(200);
+
+			await http
+				.patch(`/v1/restaurants/${r.id}`)
+				.set("Authorization", auth)
+				.send({ logoUrl: null })
+				.expect(200);
+
+			await s3.waitForDelete(key);
+		});
+
 		it("patches only the given address fields", async () => {
 			const { http } = getE2eApp();
 			const { auth } = await owner();
@@ -423,6 +450,43 @@ describe("owner restaurants", () => {
 					.findInRestaurant(user.id, r.id, item.id),
 			).toBeNull();
 			expect(await app.get(AddressRepository).findById(addressId)).toBeNull();
+		});
+
+		it("deletes the restaurant's logo and banner objects", async () => {
+			const { http, s3 } = getE2eApp();
+			const { auth } = await owner();
+			const r = await create(auth);
+			const logo = await http
+				.post(`/v1/restaurants/${r.id}/uploads`)
+				.set("Authorization", auth)
+				.send({ kind: "logo", contentType: "image/png", size: 1024 })
+				.expect(201);
+			const logoKey = s3.keyFromPublicUrl(logo.body.publicUrl) as string;
+			s3.simulateUpload(logoKey, 1024, "image/png");
+			await http
+				.post(`/v1/restaurants/${r.id}/uploads/${logo.body.uploadId}/confirm`)
+				.set("Authorization", auth)
+				.expect(200);
+
+			const banner = await http
+				.post(`/v1/restaurants/${r.id}/uploads`)
+				.set("Authorization", auth)
+				.send({ kind: "banner", contentType: "image/png", size: 1024 })
+				.expect(201);
+			const bannerKey = s3.keyFromPublicUrl(banner.body.publicUrl) as string;
+			s3.simulateUpload(bannerKey, 1024, "image/png");
+			await http
+				.post(`/v1/restaurants/${r.id}/uploads/${banner.body.uploadId}/confirm`)
+				.set("Authorization", auth)
+				.expect(200);
+
+			await http
+				.delete(`/v1/restaurants/${r.id}`)
+				.set("Authorization", auth)
+				.expect(204);
+
+			await s3.waitForDelete(logoKey);
+			await s3.waitForDelete(bannerKey);
 		});
 
 		it("returns 404 for another owner and leaves the restaurant intact", async () => {

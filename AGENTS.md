@@ -95,13 +95,20 @@ New Drizzle tables go in a new `db/schemas/{name}.schema.ts` and are re-exported
 - `GET restaurants/nearby` uses PostGIS `ST_DWithin`/`ST_Distance` on `location::geography` (`radiusKm` ≤ 25, online only, nearest first).
 - Slugs come from the name (`SlugHelper`), retry with a random suffix on collision, and never change on rename.
 
+## Uploads
+
+- Logos, banners and menu-item photos upload straight from the browser to a public S3 bucket via a presigned POST; the API never sees the file bytes. Restaurant flow: `POST :id/uploads {kind, contentType, size}` (`kind` is `logo`|`banner`) → 201 with a presigned POST (`url`, `fields`, `publicUrl`, `expiresAt`) and a pending `uploads` row → browser POSTs the file to S3 → `POST :id/uploads/:uploadId/confirm` (200) verifies the object via `headObject` (409 if missing/mismatched), then in one transaction deletes the pending row and sets `logoUrl`/`bannerUrl`. Menu-item photos mirror this at `POST/DELETE :id/menu/items/:itemId/uploads[/:uploadId[/confirm]]` -- no `kind` in the body, since an item has one photo slot -- and confirm sets the item's `imageUrl`. All routes are `@Roles(AuthRole.Restaurant)`.
+- `uploads` table (`db/schemas/upload.schema.ts`): pending uploads only, `ownerId`→users, `restaurantId`→restaurants and `menuItemId`→menu_items (both `ON DELETE set null`, so a row outlives a deleted restaurant/item and still gets swept), `kind` enum `logo|banner|menu_item`, unique `objectKey`, `contentType`, `expiresAt` (indexed), `createdAt`.
+- `S3StorageAdapter` (`src/adapters/s3-storage.adapter.ts`) wraps `createPresignedPost`/`headObject`/`deleteObjects`/`publicUrl`/`keyFromPublicUrl`; `keyFromPublicUrl` returns `null` for URLs that are not ours, so an owner-pasted external URL is never deleted. Keys are server-generated (`restaurants/{restaurantId}/{kind}/{uuid}.{ext}`, or `restaurants/{restaurantId}/menu-items/{itemId}/{uuid}.{ext}` for a menu item) — the client never supplies a key or filename.
+- Cleanup runs in three places, all via `RestaurantService`: `cancelImageUpload`/`cancelMenuItemImageUpload` (explicit cancel, 204), `confirmImageUpload`/`confirmMenuItemImageUpload`/`update`/`updateMenuItem`/`remove`/`removeMenuItem` (replaced or removed image deleted from S3 through `BackgroundJobHelper` after the transaction commits), and `UploadCleanupSubscriber` (`sweepExpiredUploads`, every 10 min) for abandoned pending rows past `expiresAt`.
+
 ## Auth
 
 - **Roles**: `admin`, `restaurant`, `user` (stored in `users`, one account per email, one role) and `guest` (anonymous signed token, no row). One JWT secret per role; `admin` is **never** assignable through the API — set it in the database.
 - **Magic link**: `POST /v1/auth/magic-link {email, role?}` → emailed link to the **web app** (`WEB_APP_BASE_URL` + `WEB_APP_MAGIC_PATH`) → web app POSTs the token to `POST /v1/auth/magic-link/verify`. No `RESEND_API_KEY` in development = the link is logged; **required in production** (config fails to boot without it).
 - **Google**: `GET /v1/auth/google?role=` 302s to Google with a PKCE `code_challenge`; the web app posts the result to `POST /v1/auth/google/verify {code, state}`, which burns the one-time `state` (an `oauth_state` row in `auth_tokens`), exchanges the code via `GoogleOauthAdapter`, and verifies the returned ID token against `GOOGLE_CLIENT_ID` (required at boot, along with `GOOGLE_CLIENT_SECRET` and `GOOGLE_REDIRECT_URI`).
 - **Sessions**: short-lived access JWT + rotating opaque refresh token (`POST /v1/auth/refresh`, `POST /v1/auth/logout`); `GET/PATCH /v1/users/me`, `POST /v1/users/me/onboard`; `POST /v1/auth/guest`.
-- Login results carry a `status` in the 200 body (`authenticated` | `role_mismatch` | `sent`) because error bodies are bare `{ statusCode }`. Sign-up `role` (`user` | `restaurant`) applies only to new accounts; an existing account with another role returns `role_mismatch`.
+- Login results carry a `status` in the 200 body (`authenticated` | `role_mismatch` | `sent`) because most error bodies are bare `{ statusCode }`. Sign-up `role` (`user` | `restaurant`) applies only to new accounts; an existing account with another role returns `role_mismatch`.
 - `@Roles(AuthRole.User, ...)` applies `AccessTokenGuard` (put it on the **class** when every route needs the same roles, e.g. the owner controllers): 401 = no/invalid/expired token, 403 = valid token but role not allowed. Read the caller with `@AuthUser()` → `{ id, role }` (`id` = JWT `sub`). Never take user/owner ids from the request.
 - Another owner's resource → **404**, enforced by scoping the repository query.
 - Magic-link tokens and refresh sessions are single-use (atomic `delete … returning`), stored only as sha256 hashes, and filtered by `expiresAt` on every read; there is no TTL index in Postgres, so `AuthCleanupSubscriber` sweeps expired rows hourly.
@@ -109,7 +116,7 @@ New Drizzle tables go in a new `db/schemas/{name}.schema.ts` and are re-exported
 
 ## API contract
 
-- Wire JSON is **camelCase**. Error bodies are bare `{ statusCode }` — no message fields.
+- Wire JSON is **camelCase**. Error bodies are bare `{ statusCode }` unless the exception is built from the `Errors` catalogue (`src/app/constants/errors.ts`), e.g. `throw new BadRequestException(Errors.orderNotFound(id))`, which adds `code` and `message`: `{ statusCode, code, message }`. Add new client-facing messages there; free-form exception strings and 500s are never sent (`ExceptionFilter`).
 - Partial updates are built by **key presence**; empty PATCH bodies are 400.
 - CORS is pinned to `CORS_ORIGIN`; add new HTTP verbs in `src/main.ts`.
 - New env vars go in `src/app/modules/config/config.ts` (Zod) and `.env.example`.

@@ -1,7 +1,16 @@
 import { LogClass } from "@/app/modules/logger";
-import { UserRepository } from "@/repositories/user.repository";
+import {
+	UserRepository,
+	type TUpdateUserInput,
+} from "@/repositories/user.repository";
 import type { TUser } from "@db/schemas/user.schema";
 import { Inject, Injectable, UnauthorizedException } from "@nestjs/common";
+
+/** Fields a caller may set through `PATCH /users/me`. */
+type TUpdateMeInput = Omit<
+	TUpdateUserInput,
+	"isOnboarded" | "googleSub" | "emailVerifiedAt" | "lastLoginAt"
+>;
 
 /** The caller's own profile. A token whose account is gone is a 401. */
 @LogClass()
@@ -22,14 +31,7 @@ export class UserService {
 	}
 
 	/** Updates the caller's profile; 401 if the account no longer exists. */
-	public async updateMe(
-		userId: string,
-		patch: {
-			firstName?: string;
-			lastName?: string;
-			avatarUrl?: string | null;
-		},
-	): Promise<TUser> {
+	public async updateMe(userId: string, patch: TUpdateMeInput): Promise<TUser> {
 		const user = await this._userRepository.update(userId, patch);
 		if (!user) {
 			throw new UnauthorizedException();

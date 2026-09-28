@@ -22,6 +22,20 @@
       "when": 1790573581259,
       "tag": "0002_remarkable_psynapse",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1790619525489,
+      "tag": "0003_parched_shadowcat",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1790621471527,
+      "tag": "0004_outstanding_captain_midlands",
+      "breakpoints": true
     }
   ]
 }

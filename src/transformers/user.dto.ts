@@ -1,4 +1,5 @@
 import { AuthRole } from "@/domain/enums/auth-role";
+import { USER_GENDERS } from "@/domain/enums/user-gender";
 import { z } from "zod";
 
 /**
@@ -14,6 +15,10 @@ export const userResponseSchema = z.object({
 	lastName: z.string().nullable(),
 	isOnboarded: z.boolean(),
 	avatarUrl: z.string().nullable(),
+	phoneNumber: z.string().nullable(),
+	dateOfBirth: z.string().nullable(),
+	anniversaryDate: z.string().nullable(),
+	gender: z.enum(USER_GENDERS).nullable(),
 	createdAt: z.coerce.date().transform((d) => d.toISOString()),
 });
 

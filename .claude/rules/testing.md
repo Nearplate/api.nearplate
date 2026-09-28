@@ -39,7 +39,7 @@ test/e2e/
 - Use `seedUser({ role, email, firstName, lastName })` for an existing account with a valid access token, and `seedRestaurant(ownerId, overrides?)` / `seedMenuItem(ownerId, restaurantId, overrides?)` for domain data. `reset()` also clears the `ratelimit:*` keys and the fakes.
 - The harness applies `configureApp` (so routes are under `/v1`); `global-setup.cjs` runs `db/migrations` before the first test, so every table, index, and constraint already exists.
 - `MAGIC_LINK_MAX_PER_EMAIL_PER_HOUR=3` in tests so the 429 path is cheap to hit.
-- Wire JSON is camelCase. Error bodies are `{ statusCode }` only.
+- Wire JSON is camelCase. Error bodies are `{ statusCode }`, plus `code` and `message` when thrown from the `Errors` catalogue.
 
 ## Commands
 

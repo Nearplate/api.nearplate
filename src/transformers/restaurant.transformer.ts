@@ -1,5 +1,10 @@
+import {
+	ALLOWED_IMAGE_CONTENT_TYPES,
+	MAX_UPLOAD_BYTES,
+} from "@/domain/constants/upload";
 import { FOOD_TYPES } from "@/domain/enums/food-type";
 import { RESTAURANT_STATUSES } from "@/domain/enums/restaurant-status";
+import { UPLOAD_KINDS, UploadKind } from "@/domain/enums/upload-kind";
 import type { TPage } from "@/domain/types/page.types";
 import type {
 	TCreateMenuItemInput,
@@ -12,6 +17,11 @@ import type {
 	TNearbyRestaurantsInput,
 	TUpdateRestaurantInput,
 } from "@/domain/types/restaurant.types";
+import type {
+	TCreateImageUploadInput,
+	TCreateMenuItemImageUploadInput,
+	TImageUploadResponse as TImageUploadResult,
+} from "@/domain/types/upload.types";
 import type { TNearbyRestaurant } from "@/repositories/restaurant.repository";
 import type { TMenuItem } from "@db/schemas/menu-item.schema";
 import type { TRestaurant } from "@db/schemas/restaurant.schema";
@@ -20,9 +30,11 @@ import { z } from "zod";
 import { type TMenuItemResponse, toMenuItemResponse } from "./menu-item.dto";
 import { parseOrBadRequest } from "./parse";
 import {
+	type TImageUploadResponse,
 	type TNearbyRestaurantResponse,
 	type TQrCodeResponse,
 	type TRestaurantResponse,
+	toImageUploadResponse,
 	toNearbyRestaurantResponse,
 	toQrCodeResponse,
 	toRestaurantResponse,
@@ -190,6 +202,29 @@ const _nearbySchema = z.object({
 });
 
 const _slugSchema = z.string().trim().min(1).max(_MAX_SLUG);
+
+const _createImageUploadSchema = z
+	.object({
+		kind: z.enum(UPLOAD_KINDS),
+		contentType: z.enum(ALLOWED_IMAGE_CONTENT_TYPES),
+		size: z.number().int().positive(),
+	})
+	.strict()
+	.refine((data) => data.size <= MAX_UPLOAD_BYTES[data.kind], {
+		message: "size exceeds the limit for this kind",
+		path: ["size"],
+	});
+
+const _createMenuItemImageUploadSchema = z
+	.object({
+		contentType: z.enum(ALLOWED_IMAGE_CONTENT_TYPES),
+		size: z.number().int().positive(),
+	})
+	.strict()
+	.refine((data) => data.size <= MAX_UPLOAD_BYTES[UploadKind.MenuItem], {
+		message: "size exceeds the limit for a menu item photo",
+		path: ["size"],
+	});
 
 export type TRestaurantListResponse = {
 	items: TRestaurantResponse[];
@@ -372,5 +407,45 @@ export class RestaurantTransformer {
 	/** QR code payload → wire DTO. */
 	public toQrCodeResponseDTO(data: TQrCodeResponse): TQrCodeResponse {
 		return toQrCodeResponse(data);
+	}
+
+	/** Body → new-upload input; 400 for a disallowed kind, type, or oversize request. */
+	public toCreateImageUploadRequestDTO(body: unknown): TCreateImageUploadInput {
+		return parseOrBadRequest(_createImageUploadSchema, body);
+	}
+
+	/** Presigned-post payload → wire DTO. */
+	public toCreateImageUploadResponseDTO(
+		data: TImageUploadResult,
+	): TImageUploadResponse {
+		return toImageUploadResponse(data);
+	}
+
+	/** Row → wire DTO. */
+	public toConfirmImageUploadResponseDTO(
+		row: TRestaurant,
+	): TRestaurantResponse {
+		return toRestaurantResponse(row);
+	}
+
+	/** Body → new-upload input for a menu item's photo; 400 for a disallowed type or oversize request. */
+	public toCreateMenuItemImageUploadRequestDTO(
+		body: unknown,
+	): TCreateMenuItemImageUploadInput {
+		return parseOrBadRequest(_createMenuItemImageUploadSchema, body);
+	}
+
+	/** Presigned-post payload → wire DTO. */
+	public toCreateMenuItemImageUploadResponseDTO(
+		data: TImageUploadResult,
+	): TImageUploadResponse {
+		return toImageUploadResponse(data);
+	}
+
+	/** Item → wire DTO. */
+	public toConfirmMenuItemImageUploadResponseDTO(
+		item: TMenuItem,
+	): TMenuItemResponse {
+		return toMenuItemResponse(item);
 	}
 }

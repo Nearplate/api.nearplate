@@ -10,6 +10,7 @@ import {
 	type TOrderListResponse,
 } from "@/transformers/order.transformer";
 import type {
+	TImageUploadResponse,
 	TNearbyRestaurantResponse,
 	TQrCodeResponse,
 	TRestaurantResponse,
@@ -145,6 +146,56 @@ export class RestaurantController {
 		await this._restaurantService.remove(user.id, id);
 	}
 
+	/** Requests a presigned S3 POST for a new logo/banner on the caller's restaurant. */
+	@Roles(AuthRole.Restaurant)
+	@Post(":id/uploads")
+	@HttpCode(HttpStatus.CREATED)
+	public async createImageUpload(
+		@Param("id") id: string,
+		@Body() body: unknown,
+		@AuthUser() user: TAuthUser,
+	): Promise<TImageUploadResponse> {
+		const input =
+			this._restaurantTransformer.toCreateImageUploadRequestDTO(body);
+		const upload = await this._restaurantService.createImageUpload(
+			user.id,
+			id,
+			input,
+		);
+		return this._restaurantTransformer.toCreateImageUploadResponseDTO(upload);
+	}
+
+	/** Confirms an uploaded file and sets it as the restaurant's logo/banner. */
+	@Roles(AuthRole.Restaurant)
+	@Post(":id/uploads/:uploadId/confirm")
+	@HttpCode(HttpStatus.OK)
+	public async confirmImageUpload(
+		@Param("id") id: string,
+		@Param("uploadId") uploadId: string,
+		@AuthUser() user: TAuthUser,
+	): Promise<TRestaurantResponse> {
+		const restaurant = await this._restaurantService.confirmImageUpload(
+			user.id,
+			id,
+			uploadId,
+		);
+		return this._restaurantTransformer.toConfirmImageUploadResponseDTO(
+			restaurant,
+		);
+	}
+
+	/** Cancels a pending upload, deleting its S3 object. */
+	@Roles(AuthRole.Restaurant)
+	@Delete(":id/uploads/:uploadId")
+	@HttpCode(HttpStatus.NO_CONTENT)
+	public async cancelImageUpload(
+		@Param("id") id: string,
+		@Param("uploadId") uploadId: string,
+		@AuthUser() user: TAuthUser,
+	): Promise<void> {
+		await this._restaurantService.cancelImageUpload(user.id, id, uploadId);
+	}
+
 	/** A restaurant's menu, sorted by category then name. Public. */
 	@Get(":slug/menu")
 	public async getMenu(
@@ -252,6 +303,68 @@ export class RestaurantController {
 		@AuthUser() user: TAuthUser,
 	): Promise<void> {
 		await this._restaurantService.removeMenuItem(user.id, id, itemId);
+	}
+
+	/** Requests a presigned S3 POST for a new photo on the caller's menu item. */
+	@Roles(AuthRole.Restaurant)
+	@Post(":id/menu/items/:itemId/uploads")
+	@HttpCode(HttpStatus.CREATED)
+	public async createMenuItemImageUpload(
+		@Param("id") id: string,
+		@Param("itemId") itemId: string,
+		@Body() body: unknown,
+		@AuthUser() user: TAuthUser,
+	): Promise<TImageUploadResponse> {
+		const input =
+			this._restaurantTransformer.toCreateMenuItemImageUploadRequestDTO(body);
+		const upload = await this._restaurantService.createMenuItemImageUpload(
+			user.id,
+			id,
+			itemId,
+			input,
+		);
+		return this._restaurantTransformer.toCreateMenuItemImageUploadResponseDTO(
+			upload,
+		);
+	}
+
+	/** Confirms an uploaded file and sets it as the menu item's photo. */
+	@Roles(AuthRole.Restaurant)
+	@Post(":id/menu/items/:itemId/uploads/:uploadId/confirm")
+	@HttpCode(HttpStatus.OK)
+	public async confirmMenuItemImageUpload(
+		@Param("id") id: string,
+		@Param("itemId") itemId: string,
+		@Param("uploadId") uploadId: string,
+		@AuthUser() user: TAuthUser,
+	): Promise<TMenuItemResponse> {
+		const item = await this._restaurantService.confirmMenuItemImageUpload(
+			user.id,
+			id,
+			itemId,
+			uploadId,
+		);
+		return this._restaurantTransformer.toConfirmMenuItemImageUploadResponseDTO(
+			item,
+		);
+	}
+
+	/** Cancels a pending menu-item photo upload, deleting its S3 object. */
+	@Roles(AuthRole.Restaurant)
+	@Delete(":id/menu/items/:itemId/uploads/:uploadId")
+	@HttpCode(HttpStatus.NO_CONTENT)
+	public async cancelMenuItemImageUpload(
+		@Param("id") id: string,
+		@Param("itemId") itemId: string,
+		@Param("uploadId") uploadId: string,
+		@AuthUser() user: TAuthUser,
+	): Promise<void> {
+		await this._restaurantService.cancelMenuItemImageUpload(
+			user.id,
+			id,
+			itemId,
+			uploadId,
+		);
 	}
 
 	/** A QR code for the caller's public menu page. */
