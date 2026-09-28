@@ -24,8 +24,10 @@ import { type TMenuItemResponse, toMenuItemResponse } from "./menu-item.dto";
 import { parseOrBadRequest } from "./parse";
 import {
 	type TNearbyRestaurantResponse,
+	type TQrCodeResponse,
 	type TRestaurantResponse,
 	toNearbyRestaurantResponse,
+	toQrCodeResponse,
 	toRestaurantResponse,
 } from "./restaurant.dto";
 
@@ -65,6 +67,9 @@ const _addressSchema = z
 		phoneNumber: _short.nullable().optional(),
 	})
 	.strict();
+
+/** Shared with `OrderTransformer`, for the order delivery-address snapshot. */
+export const addressSchema = _addressSchema;
 
 /** `[longitude, latitude]`. */
 const _coordinates = z.tuple([
@@ -347,5 +352,10 @@ export class RestaurantTransformer implements ICRUDTransformer<
 		page: TPage<TMenuItem>,
 	): TMenuItemListResponse {
 		return { items: page.items.map(toMenuItemResponse), total: page.total };
+	}
+
+	/** QR code payload → wire DTO. */
+	public toQrCodeResponseDTO(data: TQrCodeResponse): TQrCodeResponse {
+		return toQrCodeResponse(data);
 	}
 }

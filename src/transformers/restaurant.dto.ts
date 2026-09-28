@@ -58,3 +58,16 @@ export function toNearbyRestaurantResponse(
 		distanceMeters: Math.round(row.distanceMeters),
 	};
 }
+
+const _qrCodeSchema = z.object({
+	url: z.string(),
+	pngDataUrl: z.string(),
+	svgDataUrl: z.string(),
+});
+
+export type TQrCodeResponse = z.infer<typeof _qrCodeSchema>;
+
+/** Validates the outgoing QR code payload before it reaches the wire. */
+export function toQrCodeResponse(data: TQrCodeResponse): TQrCodeResponse {
+	return _qrCodeSchema.parse(data);
+}

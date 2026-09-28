@@ -10,7 +10,7 @@ import { isUuid } from "@/repositories/repository.utils";
 import type { TGeoPoint } from "@db/schemas/geo";
 import { menuItems, type TMenuItem } from "@db/schemas/menu-item.schema";
 import { Inject, Injectable } from "@nestjs/common";
-import { and, asc, count, eq } from "drizzle-orm";
+import { and, asc, count, eq, inArray } from "drizzle-orm";
 
 /** Persistence-level create: the location is copied from the restaurant. */
 export type TCreateMenuItemRecord = {
@@ -153,6 +153,30 @@ export class MenuItemRepository {
 			)
 			.returning({ id: menuItems.id });
 		return rows.length === 1;
+	}
+
+	/**
+	 * The subset of `ids` that belong to `restaurantId`, with no owner scope.
+	 * Used by order placement to validate and price a customer's cart; ids not
+	 * under this restaurant (or not existing) are simply absent from the
+	 * result, which the caller treats as an invalid order.
+	 */
+	public async findManyInRestaurant(
+		restaurantId: string,
+		ids: string[],
+	): Promise<TMenuItem[]> {
+		if (!isUuid(restaurantId) || ids.length === 0) {
+			return [];
+		}
+		return this._databaseService.db
+			.select()
+			.from(menuItems)
+			.where(
+				and(
+					eq(menuItems.restaurantId, restaurantId),
+					inArray(menuItems.id, ids),
+				),
+			);
 	}
 
 	/** Every item of a restaurant for the public menu, by category then name. */

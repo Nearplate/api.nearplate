@@ -164,6 +164,17 @@ export class RestaurantRepository implements ICRUDRepository<
 		return rows.length === 1;
 	}
 
+	/**
+	 * Lookup by id with no owner scope, for callers (order placement) that
+	 * need the restaurant's status and `ownerId` without owning it themselves.
+	 */
+	public async findByIdPublic(id: string): Promise<TRestaurant | null> {
+		if (!isUuid(id)) {
+			return null;
+		}
+		return this._selectJoined(this._databaseService.db, eq(restaurants.id, id));
+	}
+
 	/** Public lookup by slug (any status, so clients can show "closed"). */
 	public async findBySlug(slug: string): Promise<TRestaurant | null> {
 		return this._selectJoined(
