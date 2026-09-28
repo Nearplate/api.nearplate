@@ -108,7 +108,7 @@ New Drizzle tables go in a new `db/schemas/{name}.schema.ts` and are re-exported
 - **Magic link**: `POST /v1/auth/magic-link {email, role?}` → emailed link to the **web app** (`WEB_APP_BASE_URL` + `WEB_APP_MAGIC_PATH`) → web app POSTs the token to `POST /v1/auth/magic-link/verify`. No `RESEND_API_KEY` in development = the link is logged; **required in production** (config fails to boot without it).
 - **Google**: `GET /v1/auth/google?role=` 302s to Google with a PKCE `code_challenge`; the web app posts the result to `POST /v1/auth/google/verify {code, state}`, which burns the one-time `state` (an `oauth_state` row in `auth_tokens`), exchanges the code via `GoogleOauthAdapter`, and verifies the returned ID token against `GOOGLE_CLIENT_ID` (required at boot, along with `GOOGLE_CLIENT_SECRET` and `GOOGLE_REDIRECT_URI`).
 - **Sessions**: short-lived access JWT + rotating opaque refresh token (`POST /v1/auth/refresh`, `POST /v1/auth/logout`); `GET/PATCH /v1/users/me`, `POST /v1/users/me/onboard`; `POST /v1/auth/guest`.
-- Login results carry a `status` in the 200 body (`authenticated` | `role_mismatch` | `sent`) because error bodies are bare `{ statusCode }`. Sign-up `role` (`user` | `restaurant`) applies only to new accounts; an existing account with another role returns `role_mismatch`.
+- Login results carry a `status` in the 200 body (`authenticated` | `role_mismatch` | `sent`) because most error bodies are bare `{ statusCode }`. Sign-up `role` (`user` | `restaurant`) applies only to new accounts; an existing account with another role returns `role_mismatch`.
 - `@Roles(AuthRole.User, ...)` applies `AccessTokenGuard` (put it on the **class** when every route needs the same roles, e.g. the owner controllers): 401 = no/invalid/expired token, 403 = valid token but role not allowed. Read the caller with `@AuthUser()` → `{ id, role }` (`id` = JWT `sub`). Never take user/owner ids from the request.
 - Another owner's resource → **404**, enforced by scoping the repository query.
 - Magic-link tokens and refresh sessions are single-use (atomic `delete … returning`), stored only as sha256 hashes, and filtered by `expiresAt` on every read; there is no TTL index in Postgres, so `AuthCleanupSubscriber` sweeps expired rows hourly.
@@ -116,7 +116,7 @@ New Drizzle tables go in a new `db/schemas/{name}.schema.ts` and are re-exported
 
 ## API contract
 
-- Wire JSON is **camelCase**. Error bodies are bare `{ statusCode }` — no message fields.
+- Wire JSON is **camelCase**. Error bodies are bare `{ statusCode }` unless the exception is built from the `Errors` catalogue (`src/app/constants/errors.ts`), e.g. `throw new BadRequestException(Errors.orderNotFound(id))`, which adds `code` and `message`: `{ statusCode, code, message }`. Add new client-facing messages there; free-form exception strings and 500s are never sent (`ExceptionFilter`).
 - Partial updates are built by **key presence**; empty PATCH bodies are 400.
 - CORS is pinned to `CORS_ORIGIN`; add new HTTP verbs in `src/main.ts`.
 - New env vars go in `src/app/modules/config/config.ts` (Zod) and `.env.example`.

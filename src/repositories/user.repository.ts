@@ -26,6 +26,10 @@ export type TUpdateUserInput = Partial<{
 	lastName: string | null;
 	isOnboarded: boolean;
 	avatarUrl: string | null;
+	phoneNumber: string | null;
+	dateOfBirth: string | null;
+	anniversaryDate: string | null;
+	gender: TUser["gender"];
 	googleSub: string;
 	emailVerifiedAt: Date;
 	lastLoginAt: Date;

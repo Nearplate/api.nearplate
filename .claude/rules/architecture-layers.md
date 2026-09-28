@@ -95,5 +95,5 @@ Wraps external systems (JWT, Redis, Resend email, Google token verification). Ca
 - Use `@Inject(ClassName)` for constructor DI.
 - Controllers accept `@Body() body: unknown` — never trust raw body types.
 - Build partial update objects by **key presence**, never by writing `undefined`.
-- Error responses are bare `{ statusCode }` — do not add message fields to HTTP errors.
+- Error responses are bare `{ statusCode }` unless built from the `Errors` catalogue (`src/app/constants/errors.ts`), which adds `code` and `message`. Never pass free-form strings to HTTP exceptions; add an `Errors` entry instead.
 - Register new providers in the barrel arrays under `src/app/`.

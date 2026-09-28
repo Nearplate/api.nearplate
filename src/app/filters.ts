@@ -10,14 +10,15 @@ import {
 import { HttpAdapterHost } from "@nestjs/core";
 import type { Request } from "express";
 import { WINSTON_MODULE_NEST_PROVIDER } from "nest-winston";
+import type { TAppError } from "@/app/constants/errors";
 import { stripSensitiveQuery } from "@/app/modules/logger";
 
 /**
- * The response body stays a bare `{statusCode}` -- that contract is relied on
- * elsewhere and error messages can leak internals. But until now nothing was
- * logged server-side either, so a 500 left no trace anywhere. This logs full
- * detail to stderr (visible in the platform's log viewer) while the client
- * still sees only the status code.
+ * The response body is a bare `{statusCode}` unless the exception was built
+ * from the `Errors` catalogue (`src/app/constants/errors.ts`), in which case
+ * its `code` and `message` are forwarded too. Free-form exception messages
+ * and non-HTTP errors are never sent, since they can leak internals. Full
+ * detail is always logged to stderr (visible in the platform's log viewer).
  */
 @Injectable()
 @Catch()
@@ -40,7 +41,30 @@ export class ExceptionFilter {
 
 		this._log(exception, status, ctx.getRequest<Request>());
 
-		httpAdapter.reply(ctx.getResponse(), { statusCode: status }, status);
+		httpAdapter.reply(
+			ctx.getResponse(),
+			{ statusCode: status, ...this._clientError(exception) },
+			status,
+		);
+	}
+
+	/** The catalogue `{code, message}` carried by an HttpException, else nothing. */
+	private _clientError(exception: unknown): Partial<TAppError> {
+		if (!(exception instanceof HttpException)) {
+			return {};
+		}
+		const body = exception.getResponse();
+		if (
+			typeof body === "object" &&
+			body !== null &&
+			"code" in body &&
+			typeof body.code === "string" &&
+			"message" in body &&
+			typeof body.message === "string"
+		) {
+			return { code: body.code, message: body.message };
+		}
+		return {};
 	}
 
 	private _log(exception: unknown, status: number, req: Request): void {

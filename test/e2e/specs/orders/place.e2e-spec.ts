@@ -82,7 +82,7 @@ describe("POST /v1/orders", () => {
 			.setStatus(ownerUser.id, restaurant.id, RestaurantStatus.Offline);
 		const { auth } = await customer();
 
-		await http
+		const res = await http
 			.post("/v1/orders")
 			.set("Authorization", auth)
 			.send({
@@ -91,6 +91,11 @@ describe("POST /v1/orders", () => {
 				deliveryAddress: DELIVERY_ADDRESS,
 			})
 			.expect(409);
+		expect(res.body).toEqual({
+			statusCode: 409,
+			code: "RESTAURANT_NOT_ONLINE",
+			message: `Restaurant ${restaurant.name} is not accepting orders right now`,
+		});
 	});
 
 	it("returns 409 when an item is sold out", async () => {
@@ -100,7 +105,7 @@ describe("POST /v1/orders", () => {
 		});
 		const { auth } = await customer();
 
-		await getE2eApp()
+		const res = await getE2eApp()
 			.http.post("/v1/orders")
 			.set("Authorization", auth)
 			.send({
@@ -109,6 +114,11 @@ describe("POST /v1/orders", () => {
 				deliveryAddress: DELIVERY_ADDRESS,
 			})
 			.expect(409);
+		expect(res.body).toEqual({
+			statusCode: 409,
+			code: "MENU_ITEMS_UNAVAILABLE",
+			message: `Menu items are currently unavailable: ${soldOutItem.id}`,
+		});
 	});
 
 	it("returns 400 when an item does not belong to the restaurant", async () => {
@@ -119,7 +129,7 @@ describe("POST /v1/orders", () => {
 		const foreignItem = await seedMenuItem(otherOwner.id, otherRestaurant.id);
 		const { auth } = await customer();
 
-		await http
+		const res = await http
 			.post("/v1/orders")
 			.set("Authorization", auth)
 			.send({
@@ -128,6 +138,11 @@ describe("POST /v1/orders", () => {
 				deliveryAddress: DELIVERY_ADDRESS,
 			})
 			.expect(400);
+		expect(res.body).toEqual({
+			statusCode: 400,
+			code: "MENU_ITEMS_NOT_IN_RESTAURANT",
+			message: `One or more menu items do not belong to restaurant ${restaurant.name}`,
+		});
 	});
 
 	it("returns 403 for non-user roles and 401 without a token", async () => {

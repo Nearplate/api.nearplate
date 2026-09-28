@@ -10,6 +10,7 @@ import {
 	type TOrder,
 	type TOrderDeliveryAddress,
 } from "@db/schemas/order.schema";
+import { restaurants } from "@db/schemas/restaurant.schema";
 import { Inject, Injectable } from "@nestjs/common";
 import { and, asc, count, desc, eq } from "drizzle-orm";
 
@@ -31,6 +32,9 @@ export type TCreateOrderRecord = {
 };
 
 export type TOrderWithItems = TOrder & { items: TOrderItem[] };
+
+/** A customer's order-list row: the order plus the restaurant it was placed with. */
+export type TOrderWithRestaurantName = TOrder & { restaurantName: string };
 
 /**
  * Data access for `orders`/`order_items`. An order is reachable either by its
@@ -115,18 +119,36 @@ export class OrderRepository {
 		);
 	}
 
-	/** A customer's own orders, newest first. */
+	/** A customer's own orders, newest first, with the restaurant's name joined in. */
 	public async listForUser(
 		userId: string,
 		query: TListOrdersInput,
-	): Promise<TPage<TOrder>> {
-		return this._list(
-			and(
-				eq(orders.userId, userId),
-				query.status ? eq(orders.status, query.status) : undefined,
-			),
-			query,
+	): Promise<TPage<TOrderWithRestaurantName>> {
+		const filter = and(
+			eq(orders.userId, userId),
+			query.status ? eq(orders.status, query.status) : undefined,
 		);
+		const [rows, [totalRow]] = await Promise.all([
+			this._databaseService.db
+				.select({ order: orders, restaurantName: restaurants.name })
+				.from(orders)
+				.innerJoin(restaurants, eq(orders.restaurantId, restaurants.id))
+				.where(filter)
+				.orderBy(desc(orders.createdAt), desc(orders.id))
+				.limit(query.limit)
+				.offset(query.offset),
+			this._databaseService.db
+				.select({ total: count() })
+				.from(orders)
+				.where(filter),
+		]);
+		return {
+			items: rows.map((row) => ({
+				...row.order,
+				restaurantName: row.restaurantName,
+			})),
+			total: totalRow?.total ?? 0,
+		};
 	}
 
 	/** Applies the new status; null when missing or not this owner's. */

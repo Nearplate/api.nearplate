@@ -1,3 +1,4 @@
+import { ErrorMessages } from "@/app/constants/errors";
 import { DatabaseService } from "@/app/modules/database";
 import { LogClass } from "@/app/modules/logger";
 import { RestaurantStatus } from "@/domain/enums/restaurant-status";
@@ -15,6 +16,7 @@ import {
 	OrderRepository,
 	type TCreateOrderItemRecord,
 	type TOrderWithItems,
+	type TOrderWithRestaurantName,
 } from "@/repositories/order.repository";
 import { RestaurantRepository } from "@/repositories/restaurant.repository";
 import type { TOrder } from "@db/schemas/order.schema";
@@ -59,10 +61,14 @@ export class OrderService {
 				input.restaurantId,
 			);
 			if (!restaurant) {
-				throw new NotFoundException();
+				throw new NotFoundException(
+					ErrorMessages.restaurantNotFound(input.restaurantId),
+				);
 			}
 			if (restaurant.status !== RestaurantStatus.Online) {
-				throw new ConflictException();
+				throw new ConflictException(
+					ErrorMessages.restaurantNotOnline(restaurant.name),
+				);
 			}
 
 			const ids = input.items.map((item) => item.menuItemId);
@@ -72,10 +78,17 @@ export class OrderService {
 			);
 			const byId = new Map(menuItems.map((item) => [item.id, item]));
 			if (byId.size !== new Set(ids).size) {
-				throw new BadRequestException();
+				throw new BadRequestException(
+					ErrorMessages.menuItemsNotInRestaurant(restaurant.name),
+				);
 			}
-			if (menuItems.some((item) => !item.isAvailable)) {
-				throw new ConflictException();
+			const unavailable = menuItems.filter((item) => !item.isAvailable);
+			if (unavailable.length > 0) {
+				throw new ConflictException(
+					ErrorMessages.menuItemsUnavailable(
+						unavailable.map((item) => item.id),
+					),
+				);
 			}
 
 			const items: TCreateOrderItemRecord[] = input.items.map((line) => {
@@ -116,16 +129,16 @@ export class OrderService {
 	): Promise<TOrderWithItems> {
 		const order = await this._orderRepository.findForUser(userId, id);
 		if (!order) {
-			throw new NotFoundException();
+			throw new NotFoundException(ErrorMessages.orderNotFound(id));
 		}
 		return order;
 	}
 
-	/** The customer's own orders, newest first. */
+	/** The customer's own orders, newest first, with the restaurant name joined in. */
 	public listForUser(
 		userId: string,
 		query: TListOrdersInput,
-	): Promise<TPage<TOrder>> {
+	): Promise<TPage<TOrderWithRestaurantName>> {
 		return this._orderRepository.listForUser(userId, query);
 	}
 
@@ -151,10 +164,12 @@ export class OrderService {
 	): Promise<TOrder> {
 		const current = await this._orderRepository.findForOwner(ownerId, id);
 		if (!current || current.restaurantId !== restaurantId) {
-			throw new NotFoundException();
+			throw new NotFoundException(ErrorMessages.orderNotFound(id));
 		}
 		if (!ORDER_STATUS_TRANSITIONS[current.status].includes(status)) {
-			throw new ConflictException();
+			throw new ConflictException(
+				ErrorMessages.orderStatusTransitionNotAllowed(current.status, status),
+			);
 		}
 		const updated = await this._orderRepository.updateStatus(
 			ownerId,
@@ -162,7 +177,7 @@ export class OrderService {
 			status,
 		);
 		if (!updated) {
-			throw new NotFoundException();
+			throw new NotFoundException(ErrorMessages.orderNotFound(id));
 		}
 		return updated;
 	}

@@ -6,7 +6,7 @@ import { OrderService } from "@/services/order.service";
 import type { TOrderResponse } from "@/transformers/order.dto";
 import {
 	OrderTransformer,
-	type TOrderListResponse,
+	type TCustomerOrderListResponse,
 } from "@/transformers/order.transformer";
 import type { TAuthUser } from "@/types/auth-user";
 import {
@@ -49,16 +49,16 @@ export class OrderController {
 		return this._orderTransformer.toOrderResponseDTO(order);
 	}
 
-	/** The caller's own orders, newest first. */
+	/** The caller's own orders, newest first, each with its restaurant's name. */
 	@Roles(AuthRole.User)
 	@Get("mine")
 	public async list(
 		@Query() query: unknown,
 		@AuthUser() user: TAuthUser,
-	): Promise<TOrderListResponse> {
+	): Promise<TCustomerOrderListResponse> {
 		const input = this._orderTransformer.toListRequestDTO(query);
 		const page = await this._orderService.listForUser(user.id, input);
-		return this._orderTransformer.toOrderListResponseDTO(page);
+		return this._orderTransformer.toCustomerOrderListResponseDTO(page);
 	}
 
 	/** One of the caller's own orders, with its items. */
