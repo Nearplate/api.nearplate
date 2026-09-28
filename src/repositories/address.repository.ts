@@ -12,6 +12,8 @@ export type TCreateAddressInput = {
 	state: string;
 	zipcode: string;
 	phoneNumber?: string | null;
+	lat?: number | null;
+	lng?: number | null;
 };
 
 export type TUpdateAddressInput = Partial<TCreateAddressInput>;

@@ -14,6 +14,8 @@ const _addressSchema = z.object({
 	state: z.string(),
 	zipcode: z.string(),
 	phoneNumber: z.string().nullable(),
+	lat: z.number().nullable(),
+	lng: z.number().nullable(),
 	createdAt: _date,
 	updatedAt: _date,
 });

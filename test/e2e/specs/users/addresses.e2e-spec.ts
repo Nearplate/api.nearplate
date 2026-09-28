@@ -10,6 +10,7 @@ describe("users/me/addresses", () => {
 		city: "Bengaluru",
 		state: "Karnataka",
 		zipcode: "560001",
+		phoneNumber: "+919876543210",
 	};
 
 	const work = {
@@ -18,6 +19,7 @@ describe("users/me/addresses", () => {
 		city: "Bengaluru",
 		state: "Karnataka",
 		zipcode: "560025",
+		phoneNumber: "+919123456789",
 	};
 
 	describe("POST /", () => {
@@ -31,6 +33,43 @@ describe("users/me/addresses", () => {
 				.expect(201);
 			expect(res.body).toMatchObject({ label: "Home", isDefault: true });
 			expect(res.body.userId).toBeUndefined();
+		});
+
+		it("normalises the phone to +91 and stores the map pin", async () => {
+			const { http, seedUser } = getE2eApp();
+			const user = await seedUser();
+			const res = await http
+				.post("/v1/users/me/addresses")
+				.set("Authorization", auth(user.accessToken))
+				.send({ ...home, phoneNumber: "98765 43210", lat: 12.97, lng: 77.59 })
+				.expect(201);
+			expect(res.body).toMatchObject({
+				phoneNumber: "+919876543210",
+				lat: 12.97,
+				lng: 77.59,
+			});
+		});
+
+		it("keeps a 10-digit number that itself starts with 91", async () => {
+			const { http, seedUser } = getE2eApp();
+			const user = await seedUser();
+			const res = await http
+				.post("/v1/users/me/addresses")
+				.set("Authorization", auth(user.accessToken))
+				.send({ ...home, phoneNumber: "9123456789" })
+				.expect(201);
+			expect(res.body.phoneNumber).toBe("+919123456789");
+		});
+
+		it("returns a null pin when none was sent", async () => {
+			const { http, seedUser } = getE2eApp();
+			const user = await seedUser();
+			const res = await http
+				.post("/v1/users/me/addresses")
+				.set("Authorization", auth(user.accessToken))
+				.send(home)
+				.expect(201);
+			expect(res.body).toMatchObject({ lat: null, lng: null });
 		});
 
 		it("does not default a second address unless requested", async () => {
@@ -85,6 +124,10 @@ describe("users/me/addresses", () => {
 			[{ ...home, line1: "" }],
 			[{ ...home, zipcode: "" }],
 			[{ ...home, phoneNumber: 123 }],
+			[{ ...home, phoneNumber: undefined }],
+			[{ ...home, phoneNumber: "12345" }],
+			[{ ...home, phoneNumber: "5876543210" }],
+			[{ ...home, lat: 91, lng: 77.6 }],
 			[{ ...home, extra: "nope" }],
 		])("rejects invalid body %j with 400", async (body) => {
 			const { http, seedUser } = getE2eApp();

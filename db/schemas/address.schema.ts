@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import {
 	boolean,
+	doublePrecision,
 	index,
 	pgTable,
 	text,
@@ -29,6 +30,9 @@ export const addresses = pgTable(
 		state: text().notNull(),
 		zipcode: text().notNull(),
 		phoneNumber: text(),
+		/** Map pin, set when the user picked the address on the map. */
+		lat: doublePrecision(),
+		lng: doublePrecision(),
 		createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
 		updatedAt: timestamp({ withTimezone: true })
 			.notNull()
@@ -55,6 +59,8 @@ export type TAddress = {
 	state: string;
 	zipcode: string;
 	phoneNumber: string | null;
+	lat: number | null;
+	lng: number | null;
 	createdAt: Date;
 	updatedAt: Date;
 };
