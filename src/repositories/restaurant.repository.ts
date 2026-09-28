@@ -1,14 +1,11 @@
 import { DatabaseService, type TDatabase } from "@/app/modules/database";
 import { LogClass } from "@/app/modules/logger";
-import type {
-	ICRUDRepository,
-	TPage,
-} from "@/domain/interfaces/crud.interface";
 import { RestaurantStatus } from "@/domain/enums/restaurant-status";
 import type {
 	TListRestaurantsInput,
 	TNearbyRestaurantsInput,
 } from "@/domain/types/restaurant.types";
+import type { TPage } from "@/domain/types/page.types";
 import { SlugHelper } from "@/helpers/slug.helper";
 import { isUniqueViolation, isUuid } from "@/repositories/repository.utils";
 import { addresses, type TAddress } from "@db/schemas/address.schema";
@@ -24,6 +21,9 @@ export type TCreateRestaurantRecord = {
 	name: string;
 	cuisines: string[];
 	isPureVeg: boolean;
+	description?: string | null;
+	logoUrl?: string | null;
+	bannerUrl?: string | null;
 	location: TGeoPoint;
 	addressId: string;
 };
@@ -32,6 +32,9 @@ export type TUpdateRestaurantRecord = Partial<{
 	name: string;
 	cuisines: string[];
 	isPureVeg: boolean;
+	description: string | null;
+	logoUrl: string | null;
+	bannerUrl: string | null;
 	location: TGeoPoint;
 	status: RestaurantStatus;
 }>;
@@ -46,12 +49,7 @@ type TJoinedRow = {
 /** Data access for `restaurants`. Owner-facing methods are owner-scoped. */
 @LogClass()
 @Injectable()
-export class RestaurantRepository implements ICRUDRepository<
-	TRestaurant,
-	TCreateRestaurantRecord,
-	TUpdateRestaurantRecord,
-	TListRestaurantsInput
-> {
+export class RestaurantRepository {
 	constructor(
 		@Inject(DatabaseService)
 		private readonly _databaseService: DatabaseService,
@@ -162,6 +160,17 @@ export class RestaurantRepository implements ICRUDRepository<
 			.where(and(eq(restaurants.id, id), eq(restaurants.ownerId, ownerId)))
 			.returning({ id: restaurants.id });
 		return rows.length === 1;
+	}
+
+	/**
+	 * Lookup by id with no owner scope, for callers (order placement) that
+	 * need the restaurant's status and `ownerId` without owning it themselves.
+	 */
+	public async findByIdPublic(id: string): Promise<TRestaurant | null> {
+		if (!isUuid(id)) {
+			return null;
+		}
+		return this._selectJoined(this._databaseService.db, eq(restaurants.id, id));
 	}
 
 	/** Public lookup by slug (any status, so clients can show "closed"). */

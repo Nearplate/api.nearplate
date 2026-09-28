@@ -45,6 +45,22 @@ describe("public restaurants", () => {
 		it("returns 404 for an unknown slug", async () => {
 			await getE2eApp().http.get("/v1/restaurants/nope").expect(404);
 		});
+
+		it("includes description, logo and banner (or null if unset)", async () => {
+			const { http, seedRestaurant } = getE2eApp();
+			const user = await owner();
+			await seedRestaurant(user.id, {
+				description: "Home-style thalis.",
+				logoUrl: "https://cdn.example.com/logo.png",
+				bannerUrl: null,
+			});
+			const res = await http.get("/v1/restaurants/spice-hub").expect(200);
+			expect(res.body).toMatchObject({
+				description: "Home-style thalis.",
+				logoUrl: "https://cdn.example.com/logo.png",
+				bannerUrl: null,
+			});
+		});
 	});
 
 	describe("GET /v1/restaurants/:slug/menu", () => {
@@ -70,6 +86,22 @@ describe("public restaurants", () => {
 				priceInPaise: 24900,
 			});
 			expect(res.body.items[0]).not.toHaveProperty("ownerId");
+		});
+
+		it("includes an item's description and image (or null if unset)", async () => {
+			const { http, seedRestaurant, seedMenuItem } = getE2eApp();
+			const user = await owner();
+			const r = await seedRestaurant(user.id);
+			await seedMenuItem(user.id, r.id, {
+				name: "Paneer Tikka",
+				description: "Grilled cottage cheese.",
+				imageUrl: "https://cdn.example.com/paneer.jpg",
+			});
+			const res = await http.get("/v1/restaurants/spice-hub/menu").expect(200);
+			expect(res.body.items[0]).toMatchObject({
+				description: "Grilled cottage cheese.",
+				imageUrl: "https://cdn.example.com/paneer.jpg",
+			});
 		});
 
 		it("does not leak another restaurant's items", async () => {

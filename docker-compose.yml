@@ -16,30 +16,30 @@ services:
     networks:
       - api_nearplate_net
     depends_on:
-      postgres:
-        condition: service_healthy
+      # postgres:
+      #   condition: service_healthy
       redis:
         condition: service_healthy
 
-  postgres:
-    # PostGIS on top of Postgres 17; `imresamu/postgis` ships arm64 + amd64
-    # images (the official `postgis/postgis` is amd64-only).
-    image: imresamu/postgis:17-3.5
-    restart: unless-stopped
-    container_name: api_nearplate_postgres
-    environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: api_nearplate
-    volumes:
-      - api_nearplate_postgres_data:/var/lib/postgresql/data
-    networks:
-      - api_nearplate_net
-    healthcheck:
-      test: ["CMD", "pg_isready", "-U", "postgres"]
-      interval: 5s
-      timeout: 5s
-      retries: 20
+  # postgres:
+  #   # PostGIS on top of Postgres 17; `imresamu/postgis` ships arm64 + amd64
+  #   # images (the official `postgis/postgis` is amd64-only).
+  #   image: imresamu/postgis:17-3.5
+  #   restart: unless-stopped
+  #   container_name: api_nearplate_postgres
+  #   environment:
+  #     POSTGRES_USER: postgres
+  #     POSTGRES_PASSWORD: postgres
+  #     POSTGRES_DB: api_nearplate
+  #   volumes:
+  #     - api_nearplate_postgres_data:/var/lib/postgresql/data
+  #   networks:
+  #     - api_nearplate_net
+  #   healthcheck:
+  #     test: ["CMD", "pg_isready", "-U", "postgres"]
+  #     interval: 5s
+  #     timeout: 5s
+  #     retries: 20
 
   redis:
     image: redis:7-alpine
@@ -59,9 +59,9 @@ volumes:
   api_nearplate_redis_data:
     name: api_nearplate_redis_data
     driver: local
-  api_nearplate_postgres_data:
-    name: api_nearplate_postgres_data
-    driver: local
+  # api_nearplate_postgres_data:
+  #   name: api_nearplate_postgres_data
+  #   driver: local
 networks:
   api_nearplate_net:
     name: api_nearplate_net

@@ -41,6 +41,12 @@ export const restaurants = pgTable(
 		/** Lowercased and trimmed, so filters match exactly. */
 		cuisines: text().array().notNull().default([]),
 		isPureVeg: boolean().notNull().default(false),
+		/** Short public description shown on the menu page. */
+		description: text(),
+		/** Public https URL to the restaurant's square logo. */
+		logoUrl: text(),
+		/** Public https URL to the restaurant's wide banner image. */
+		bannerUrl: text(),
 		location: geoPoint().notNull(),
 		createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
 		updatedAt: timestamp({ withTimezone: true })
@@ -65,6 +71,9 @@ export type TRestaurant = {
 	address: TAddress;
 	cuisines: string[];
 	isPureVeg: boolean;
+	description: string | null;
+	logoUrl: string | null;
+	bannerUrl: string | null;
 	location: TGeoPoint;
 	createdAt: Date;
 	updatedAt: Date;

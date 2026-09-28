@@ -77,22 +77,17 @@ Same role as a controller, but triggered by cron — not HTTP.
 
 ## Domain
 
-Enums, types, constants and interfaces (ports) shared across layers live in `src/domain/`. No runtime logic, no DB access, no HTTP.
+Enums, types, and constants shared across layers live in `src/domain/`. No runtime logic, no DB access, no HTTP.
+
+- A CRUD feature's four classes (controller, transformer, service, repository) follow the same method shapes with the feature's own types, e.g. `OrderRepository.create/list/findById/update/delete` taking `(ownerId, ...)`. `RestaurantService`/`Transformer`/`Repository` are the reference implementations. A controller that mixes public and owner routes (`RestaurantController`) guards each owner handler with `@Roles(...)` and has no owner `get(id)` route. One service per controller: menu logic lives in `RestaurantService`.
+- `ownerId` is always the first argument of service and repository methods: `create(ownerId, input)`, `list(ownerId, query)`, `findById(ownerId, id)`, `update(ownerId, id, input)`, `delete(ownerId, id)` (service: `get`, `remove`).
+- Extra feature-specific methods (e.g. `purgeCompleted`) are added on the class as needed.
+- `TPage<TRow>` (`src/domain/types/page.types.ts`) is the shared paginated-list return shape (`{ items, total }`).
+- New shared types go in `src/domain/types/{name}.types.ts`.
 
 ## Adapter
 
 Wraps external systems (JWT, Redis, Resend email, Google token verification). Called by services and guards — not by controllers or repositories.
-
-## Ports (`src/domain/interfaces/`)
-
-Contracts between layers live in `src/domain/interfaces/` (types only, no runtime code).
-
-- `crud.interface.ts` defines the owner-scoped CRUD ports: `ICRUDController`, `ICRUDService`, `ICRUDTransformer`, `ICRUDRepository` (plus `TPage<TRow>`).
-- A CRUD feature's four classes **must `implements`** the matching port with the feature's own types, e.g. `OrderRepository implements ICRUDRepository<TOrder, TCreateOrderInput, TUpdateOrderInput, TListOrdersInput>`. `RestaurantService`/`Transformer`/`Repository` are the reference implementations. A controller that mixes public and owner routes (`RestaurantController`) guards each owner handler with `@Roles(...)` and does not implement `ICRUDController` when it has no owner `get(id)`. One service per controller: menu logic lives in `RestaurantService`.
-- `ownerId` is always the first argument of service and repository methods: `create(ownerId, input)`, `list(ownerId, query)`, `findById(ownerId, id)`, `update(ownerId, id, input)`, `delete(ownerId, id)` (service: `get`, `remove`).
-- Extra feature-specific methods (e.g. `purgeCompleted`) are added on the class beyond the port.
-- Interfaces are erased at runtime: inject the concrete class with `@Inject(ClassName)`, never the interface.
-- New layer contracts that more than one feature will share go in a new `src/domain/interfaces/{name}.interface.ts`; interface names use an `I` prefix.
 
 ## Conventions
 

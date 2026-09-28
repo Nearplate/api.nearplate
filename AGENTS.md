@@ -67,19 +67,12 @@ Cron:  Subscriber → Service
 - **Repository** — all DB access for one collection; owner scoping in the filter; `@DBCache`.
 - **Adapter** — external systems (JWT, Redis). **Helper** — stateless utilities.
 - **Subscriber** — cron schedule only; thin, catches errors, delegates to a service.
-- **Ports** — `src/domain/interfaces/`: contracts each layer implements (see below).
 
-Reference features: **restaurants** and **menu items** (owner CRUD implementing the ICRUD ports, plus a public controller) and **auth** (magic link/Google/sessions; not CRUD).
+Reference features: **restaurants** and **menu items** (owner CRUD, plus a public controller) and **auth** (magic link/Google/sessions; not CRUD).
 
-## Ports (`src/domain/interfaces/`)
-
-Layer contracts are interfaces in `src/domain/interfaces/` (types only).
-
-- `crud.interface.ts`: `ICRUDController`, `ICRUDService`, `ICRUDTransformer`, `ICRUDRepository` (+ `TPage<TRow>`) for owner-scoped CRUD.
-- A CRUD feature's controller, transformer, service and repository **must `implements`** the matching port, e.g. `RestaurantService implements ICRUDService<TRestaurant, TCreateRestaurantInput, TUpdateRestaurantInput, TListRestaurantsInput>` (the reference implementation; `RestaurantController` itself does not implement `ICRUDController`, because a mixed public/owner controller has no owner `get(id)` route). The repository's create/update generics may differ from the service's when persistence needs more than the request carries (`RestaurantRepository` takes a GeoJSON `location` and an `addressId`, the service takes `coordinates` and an `address`).
-- `ownerId` comes first in service/repository methods: `create(ownerId, input)`, `list(ownerId, query)`, `findById(ownerId, id)`, `update(ownerId, id, input)`, `delete(ownerId, id)` (service: `get`, `remove`). Feature-specific extras go on the class beyond the port.
-- Interfaces are erased at runtime — inject the concrete class with `@Inject(ClassName)`.
-- Shared contracts for other layers go in a new `{name}.interface.ts` beside it.
+- A CRUD feature's controller, transformer, service and repository follow the same method shapes, e.g. `RestaurantService.create/list/get/update/remove`, `RestaurantRepository.create/list/findById/update/delete` (the reference implementation; a mixed public/owner controller like `RestaurantController` has no owner `get(id)` route). The repository's create/update inputs may differ from the service's when persistence needs more than the request carries (`RestaurantRepository` takes a GeoJSON `location` and an `addressId`, the service takes `coordinates` and an `address`).
+- `ownerId` comes first in service/repository methods: `create(ownerId, input)`, `list(ownerId, query)`, `findById(ownerId, id)`, `update(ownerId, id, input)`, `delete(ownerId, id)` (service: `get`, `remove`). Feature-specific extras go on the class beyond that.
+- `TPage<TRow>` (`src/domain/types/page.types.ts`) is the shared paginated-list return shape (`{ items, total }`).
 
 ## Registration
 

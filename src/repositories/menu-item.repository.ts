@@ -1,7 +1,7 @@
 import { DatabaseService } from "@/app/modules/database";
 import { LogClass } from "@/app/modules/logger";
 import type { FoodType } from "@/domain/enums/food-type";
-import type { TPage } from "@/domain/interfaces/crud.interface";
+import type { TPage } from "@/domain/types/page.types";
 import type {
 	TListMenuItemsInput,
 	TUpdateMenuItemInput,
@@ -10,13 +10,15 @@ import { isUuid } from "@/repositories/repository.utils";
 import type { TGeoPoint } from "@db/schemas/geo";
 import { menuItems, type TMenuItem } from "@db/schemas/menu-item.schema";
 import { Inject, Injectable } from "@nestjs/common";
-import { and, asc, count, eq } from "drizzle-orm";
+import { and, asc, count, eq, inArray } from "drizzle-orm";
 
 /** Persistence-level create: the location is copied from the restaurant. */
 export type TCreateMenuItemRecord = {
 	restaurantId: string;
 	name: string;
 	category: string;
+	description?: string | null;
+	imageUrl?: string | null;
 	priceInPaise: number;
 	foodType: FoodType;
 	isAvailable: boolean;
@@ -27,8 +29,8 @@ export type TCreateMenuItemRecord = {
  * Data access for `menu_items`. Menu items are only reachable through their
  * restaurant, so every owner-facing query is scoped by **both** `ownerId` and
  * `restaurantId` in the filter: an item under the wrong restaurant, or someone
- * else's, is simply not found. That is why this class does not implement the
- * id-only `ICRUDRepository` signatures.
+ * else's, is simply not found. That is why this class does not use the
+ * id-only repository method signatures other collections share.
  */
 @LogClass()
 @Injectable()
@@ -153,6 +155,30 @@ export class MenuItemRepository {
 			)
 			.returning({ id: menuItems.id });
 		return rows.length === 1;
+	}
+
+	/**
+	 * The subset of `ids` that belong to `restaurantId`, with no owner scope.
+	 * Used by order placement to validate and price a customer's cart; ids not
+	 * under this restaurant (or not existing) are simply absent from the
+	 * result, which the caller treats as an invalid order.
+	 */
+	public async findManyInRestaurant(
+		restaurantId: string,
+		ids: string[],
+	): Promise<TMenuItem[]> {
+		if (!isUuid(restaurantId) || ids.length === 0) {
+			return [];
+		}
+		return this._databaseService.db
+			.select()
+			.from(menuItems)
+			.where(
+				and(
+					eq(menuItems.restaurantId, restaurantId),
+					inArray(menuItems.id, ids),
+				),
+			);
 	}
 
 	/** Every item of a restaurant for the public menu, by category then name. */

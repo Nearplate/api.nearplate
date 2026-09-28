@@ -94,6 +94,21 @@ describe("restaurant menu items (/restaurants/:id/menu/items)", () => {
 			expect(item).not.toHaveProperty("location");
 		});
 
+		it("accepts a description and image URL, defaulting both to null", async () => {
+			const { restaurant, auth } = await owner();
+			const withBrand = await create(auth, restaurant.id, {
+				name: "Photographed Dish",
+				description: "Rich and creamy.",
+				imageUrl: "https://cdn.example.com/dish.jpg",
+			});
+			expect(withBrand).toMatchObject({
+				description: "Rich and creamy.",
+				imageUrl: "https://cdn.example.com/dish.jpg",
+			});
+			const bare = await create(auth, restaurant.id, { name: "Bare Dish" });
+			expect(bare).toMatchObject({ description: null, imageUrl: null });
+		});
+
 		it("copies the restaurant's location onto the item", async () => {
 			const { user, restaurant, auth } = await owner();
 			const item = await create(auth, restaurant.id);
@@ -132,6 +147,7 @@ describe("restaurant menu items (/restaurants/:id/menu/items)", () => {
 			],
 			["empty name", { name: "" }],
 			["unknown field", { extra: 1 }],
+			["malformed imageUrl", { imageUrl: "not-a-url" }],
 		])("rejects %s with 400", async (_label, overrides) => {
 			const { restaurant, auth } = await owner();
 			await getE2eApp()
@@ -285,6 +301,7 @@ describe("restaurant menu items (/restaurants/:id/menu/items)", () => {
 			["restaurantId (cannot move)", { restaurantId: MISSING_ID }],
 			["fractional price", { priceInPaise: 1.5 }],
 			["bad food type", { foodType: "x" }],
+			["malformed imageUrl", { imageUrl: "not-a-url" }],
 		])("rejects %s with 400", async (_label, body) => {
 			const { restaurant, auth } = await owner();
 			const item = await create(auth, restaurant.id);
@@ -293,6 +310,24 @@ describe("restaurant menu items (/restaurants/:id/menu/items)", () => {
 				.set("Authorization", auth)
 				.send(body)
 				.expect(400);
+		});
+
+		it("sets and clears the description and image", async () => {
+			const { http } = getE2eApp();
+			const { restaurant, auth } = await owner();
+			const item = await create(auth, restaurant.id, {
+				description: "Original",
+				imageUrl: "https://cdn.example.com/dish.jpg",
+			});
+			const res = await http
+				.patch(itemsUrl(restaurant.id, item.id))
+				.set("Authorization", auth)
+				.send({ description: null })
+				.expect(200);
+			expect(res.body).toMatchObject({
+				description: null,
+				imageUrl: "https://cdn.example.com/dish.jpg",
+			});
 		});
 
 		it("toggles availability and rejects a non-boolean", async () => {

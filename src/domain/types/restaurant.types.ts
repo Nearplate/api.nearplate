@@ -16,6 +16,9 @@ export type TCreateRestaurantInput = {
 	name: string;
 	cuisines: string[];
 	isPureVeg: boolean;
+	description?: string | null;
+	logoUrl?: string | null;
+	bannerUrl?: string | null;
 	coordinates: TCoordinates;
 	address: TAddressInput;
 };
@@ -25,6 +28,9 @@ export type TUpdateRestaurantInput = Partial<{
 	name: string;
 	cuisines: string[];
 	isPureVeg: boolean;
+	description: string | null;
+	logoUrl: string | null;
+	bannerUrl: string | null;
 	coordinates: TCoordinates;
 	address: Partial<TAddressInput>;
 }>;

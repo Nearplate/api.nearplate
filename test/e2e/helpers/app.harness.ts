@@ -7,8 +7,14 @@ import { DatabaseService } from "@/app/modules/database";
 import { AuthRole } from "@/domain/enums/auth-role";
 import { FoodType } from "@/domain/enums/food-type";
 import type { TCreateMenuItemInput } from "@/domain/types/menu-item.types";
+import type {
+	TCreateOrderInput,
+	TCreateOrderItemInput,
+} from "@/domain/types/order.types";
 import type { TCreateRestaurantInput } from "@/domain/types/restaurant.types";
+import type { TOrderWithItems } from "@/repositories/order.repository";
 import { UserRepository } from "@/repositories/user.repository";
+import { OrderService } from "@/services/order.service";
 import { RestaurantService } from "@/services/restaurant.service";
 import type { TMenuItem } from "@db/schemas/menu-item.schema";
 import type { TRestaurant } from "@db/schemas/restaurant.schema";
@@ -25,6 +31,8 @@ import { FakeResendAdapter } from "./fakes/resend.adapter.fake";
 const _REDIS_KEY_PATTERNS = ["dbcache:*", "ratelimit:*"];
 /** Every table, leaf-first so `reset` reads the same as the schema's FKs. */
 const _TABLES = [
+	"order_items",
+	"orders",
 	"menu_items",
 	"restaurants",
 	"addresses",
@@ -61,6 +69,13 @@ export type TE2eApp = {
 		restaurantId: string,
 		overrides?: Partial<TCreateMenuItemInput>,
 	) => Promise<TMenuItem>;
+	/** Places an order for `userId` against `restaurantId`, one item by default. */
+	seedOrder: (
+		userId: string,
+		restaurantId: string,
+		items: TCreateOrderItemInput[],
+		overrides?: Partial<Omit<TCreateOrderInput, "restaurantId" | "items">>,
+	) => Promise<TOrderWithItems>;
 	/** Truncates every table, clears cache/rate-limit keys, resets the fakes. */
 	reset: () => Promise<void>;
 };
@@ -160,6 +175,18 @@ export async function startE2eApp(): Promise<TE2eApp> {
 				priceInPaise: 24900,
 				foodType: FoodType.Veg,
 				isAvailable: true,
+				...overrides,
+			}),
+		seedOrder: (userId, restaurantId, items, overrides = {}) =>
+			app.get(OrderService).place(userId, {
+				restaurantId,
+				items,
+				deliveryAddress: {
+					line1: "12 MG Road",
+					city: "Bengaluru",
+					state: "Karnataka",
+					zipcode: "560001",
+				},
 				...overrides,
 			}),
 		reset: async () => {

@@ -4,8 +4,14 @@ import { Roles } from "@/decorators/role.decorator";
 import { AuthRole } from "@/domain/enums/auth-role";
 import { RestaurantService } from "@/services/restaurant.service";
 import type { TMenuItemResponse } from "@/transformers/menu-item.dto";
+import type { TOrderSummaryResponse } from "@/transformers/order.dto";
+import {
+	OrderTransformer,
+	type TOrderListResponse,
+} from "@/transformers/order.transformer";
 import type {
 	TNearbyRestaurantResponse,
+	TQrCodeResponse,
 	TRestaurantResponse,
 } from "@/transformers/restaurant.dto";
 import {
@@ -36,9 +42,9 @@ import {
  * the caller in the repository filter (foreign or unknown ids are 404).
  *
  * Route order matters: `mine` and `nearby` are declared before `:slug`,
- * otherwise they would be read as slugs. It does not implement
- * `ICRUDController` because there is no owner `get(id)` route (`GET :slug` is
- * the public lookup and `GET mine` lists the caller's restaurants).
+ * otherwise they would be read as slugs. There is no owner `get(id)` route
+ * (`GET :slug` is the public lookup and `GET mine` lists the caller's
+ * restaurants).
  */
 @LogClass()
 @Controller("restaurants")
@@ -48,6 +54,8 @@ export class RestaurantController {
 		private readonly _restaurantTransformer: RestaurantTransformer,
 		@Inject(RestaurantService)
 		private readonly _restaurantService: RestaurantService,
+		@Inject(OrderTransformer)
+		private readonly _orderTransformer: OrderTransformer,
 	) {}
 
 	/** Creates a restaurant and its address. */
@@ -244,5 +252,48 @@ export class RestaurantController {
 		@AuthUser() user: TAuthUser,
 	): Promise<void> {
 		await this._restaurantService.removeMenuItem(user.id, id, itemId);
+	}
+
+	/** A QR code for the caller's public menu page. */
+	@Roles(AuthRole.Restaurant)
+	@Get(":id/qr-code")
+	public async getQrCode(
+		@Param("id") id: string,
+		@AuthUser() user: TAuthUser,
+	): Promise<TQrCodeResponse> {
+		const data = await this._restaurantService.getQrCode(user.id, id);
+		return this._restaurantTransformer.toQrCodeResponseDTO(data);
+	}
+
+	/** The caller's incoming orders for this restaurant, newest first. */
+	@Roles(AuthRole.Restaurant)
+	@Get(":id/orders")
+	public async listOrders(
+		@Param("id") id: string,
+		@Query() query: unknown,
+		@AuthUser() user: TAuthUser,
+	): Promise<TOrderListResponse> {
+		const input = this._orderTransformer.toListRequestDTO(query);
+		const page = await this._restaurantService.listOrders(user.id, id, input);
+		return this._orderTransformer.toOrderListResponseDTO(page);
+	}
+
+	/** Advances (or cancels) one of the caller's orders. */
+	@Roles(AuthRole.Restaurant)
+	@Patch(":id/orders/:orderId/status")
+	public async updateOrderStatus(
+		@Param("id") id: string,
+		@Param("orderId") orderId: string,
+		@Body() body: unknown,
+		@AuthUser() user: TAuthUser,
+	): Promise<TOrderSummaryResponse> {
+		const { status } = this._orderTransformer.toUpdateStatusRequestDTO(body);
+		const order = await this._restaurantService.updateOrderStatus(
+			user.id,
+			id,
+			orderId,
+			status,
+		);
+		return this._orderTransformer.toOrderSummaryResponseDTO(order);
 	}
 }

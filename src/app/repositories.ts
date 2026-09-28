@@ -2,6 +2,7 @@ import { AuthSessionRepository } from "@/repositories/auth-session.repository";
 import { AuthTokenRepository } from "@/repositories/auth-token.repository";
 import { AddressRepository } from "@/repositories/address.repository";
 import { MenuItemRepository } from "@/repositories/menu-item.repository";
+import { OrderRepository } from "@/repositories/order.repository";
 import { RestaurantRepository } from "@/repositories/restaurant.repository";
 import { UserRepository } from "@/repositories/user.repository";
 import type { Provider } from "@nestjs/common";
@@ -13,4 +14,5 @@ export const Repositories: Provider[] = [
 	AddressRepository,
 	RestaurantRepository,
 	MenuItemRepository,
+	OrderRepository,
 ];

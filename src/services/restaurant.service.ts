@@ -1,3 +1,4 @@
+import type { TConfig } from "@/app/modules/config/config";
 import { DatabaseService } from "@/app/modules/database";
 import { LogClass } from "@/app/modules/logger";
 import type {
@@ -6,7 +7,7 @@ import type {
 	TUpdateMenuItemInput,
 } from "@/domain/types/menu-item.types";
 import type { RestaurantStatus } from "@/domain/enums/restaurant-status";
-import type { ICRUDService, TPage } from "@/domain/interfaces/crud.interface";
+import type { TPage } from "@/domain/types/page.types";
 import type {
 	TCoordinates,
 	TCreateRestaurantInput,
@@ -14,16 +15,23 @@ import type {
 	TNearbyRestaurantsInput,
 	TUpdateRestaurantInput,
 } from "@/domain/types/restaurant.types";
+import { QrCodeHelper } from "@/helpers/qr-code.helper";
+import type { OrderStatus } from "@/domain/enums/order-status";
+import type { TListOrdersInput } from "@/domain/types/order.types";
 import { AddressRepository } from "@/repositories/address.repository";
 import { MenuItemRepository } from "@/repositories/menu-item.repository";
 import {
 	RestaurantRepository,
 	type TNearbyRestaurant,
 } from "@/repositories/restaurant.repository";
+import { OrderService } from "@/services/order.service";
+import type { TQrCodeResponse } from "@/transformers/restaurant.dto";
 import type { TGeoPoint } from "@db/schemas/geo";
 import type { TMenuItem } from "@db/schemas/menu-item.schema";
+import type { TOrder } from "@db/schemas/order.schema";
 import type { TRestaurant } from "@db/schemas/restaurant.schema";
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
 
 /**
  * Restaurant and menu business logic. A restaurant or menu item that is
@@ -34,12 +42,7 @@ import { Inject, Injectable, NotFoundException } from "@nestjs/common";
  */
 @LogClass()
 @Injectable()
-export class RestaurantService implements ICRUDService<
-	TRestaurant,
-	TCreateRestaurantInput,
-	TUpdateRestaurantInput,
-	TListRestaurantsInput
-> {
+export class RestaurantService {
 	constructor(
 		@Inject(DatabaseService)
 		private readonly _databaseService: DatabaseService,
@@ -49,6 +52,12 @@ export class RestaurantService implements ICRUDService<
 		private readonly _addressRepository: AddressRepository,
 		@Inject(MenuItemRepository)
 		private readonly _menuItemRepository: MenuItemRepository,
+		@Inject(QrCodeHelper)
+		private readonly _qrCodeHelper: QrCodeHelper,
+		@Inject(ConfigService)
+		private readonly _configService: ConfigService<TConfig>,
+		@Inject(OrderService)
+		private readonly _orderService: OrderService,
 	) {}
 
 	/**
@@ -65,6 +74,9 @@ export class RestaurantService implements ICRUDService<
 				name: input.name,
 				cuisines: input.cuisines,
 				isPureVeg: input.isPureVeg,
+				description: input.description,
+				logoUrl: input.logoUrl,
+				bannerUrl: input.bannerUrl,
 				location: this._toPoint(input.coordinates),
 				addressId: address.id,
 			});
@@ -261,6 +273,51 @@ export class RestaurantService implements ICRUDService<
 	public async getMenuBySlug(slug: string): Promise<TMenuItem[]> {
 		const restaurant = await this.getBySlug(slug);
 		return this._menuItemRepository.listByRestaurant(restaurant.id);
+	}
+
+	/**
+	 * A QR code pointing at the caller's public menu page. 404 if the
+	 * restaurant is missing or not theirs.
+	 */
+	public async getQrCode(
+		ownerId: string,
+		id: string,
+	): Promise<TQrCodeResponse> {
+		const restaurant = await this.get(ownerId, id);
+		const webAppBaseUrl =
+			this._configService.getOrThrow<string>("WEB_APP_BASE_URL");
+		const url = `${webAppBaseUrl}/r/${restaurant.slug}`;
+		const [pngDataUrl, svgDataUrl] = await Promise.all([
+			this._qrCodeHelper.toPngDataUrl(url),
+			this._qrCodeHelper.toSvgDataUrl(url),
+		]);
+		return { url, pngDataUrl, svgDataUrl };
+	}
+
+	/** The restaurant's orders for its owner; 404 if the restaurant is not theirs. */
+	public async listOrders(
+		ownerId: string,
+		restaurantId: string,
+		query: TListOrdersInput,
+	): Promise<TPage<TOrder>> {
+		await this.get(ownerId, restaurantId);
+		return this._orderService.listForOwner(ownerId, restaurantId, query);
+	}
+
+	/** Advances one of the caller's orders to a new status; 404/409 as documented on `OrderService.updateStatus`. */
+	public async updateOrderStatus(
+		ownerId: string,
+		restaurantId: string,
+		orderId: string,
+		status: OrderStatus,
+	): Promise<TOrder> {
+		await this.get(ownerId, restaurantId);
+		return this._orderService.updateStatus(
+			ownerId,
+			restaurantId,
+			orderId,
+			status,
+		);
 	}
 
 	/** `[lng, lat]` → GeoJSON Point. */

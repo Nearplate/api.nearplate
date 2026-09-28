@@ -110,6 +110,31 @@ describe("owner restaurants", () => {
 			expect(second.slug).toMatch(/^spice-hub-[0-9a-f]{6}$/);
 		});
 
+		it("accepts a description, logo and banner URL and returns them", async () => {
+			const { auth } = await owner();
+			const r = await create(auth, {
+				...BODY,
+				description: "Home-style thalis and biryanis.",
+				logoUrl: "https://cdn.example.com/logo.png",
+				bannerUrl: "https://cdn.example.com/banner.png",
+			});
+			expect(r).toMatchObject({
+				description: "Home-style thalis and biryanis.",
+				logoUrl: "https://cdn.example.com/logo.png",
+				bannerUrl: "https://cdn.example.com/banner.png",
+			});
+		});
+
+		it("defaults description, logo and banner to null", async () => {
+			const { auth } = await owner();
+			const r = await create(auth);
+			expect(r).toMatchObject({
+				description: null,
+				logoUrl: null,
+				bannerUrl: null,
+			});
+		});
+
 		it.each([
 			["missing name", { ...BODY, name: undefined }],
 			["empty cuisines", { ...BODY, cuisines: [] }],
@@ -127,6 +152,8 @@ describe("owner restaurants", () => {
 				{ ...BODY, address: { ...BODY.address, x: 1 } },
 			],
 			["missing isPureVeg", { ...BODY, isPureVeg: undefined }],
+			["malformed logoUrl", { ...BODY, logoUrl: "not-a-url" }],
+			["description too long", { ...BODY, description: "x".repeat(501) }],
 		])("rejects %s with 400", async (_label, body) => {
 			const { auth } = await owner();
 			await getE2eApp()
@@ -260,6 +287,27 @@ describe("owner restaurants", () => {
 			});
 		});
 
+		it("sets and clears the description, logo and banner", async () => {
+			const { http } = getE2eApp();
+			const { auth } = await owner();
+			const r = await create(auth, {
+				...BODY,
+				description: "Original",
+				logoUrl: "https://cdn.example.com/logo.png",
+				bannerUrl: "https://cdn.example.com/banner.png",
+			});
+			const res = await http
+				.patch(`/v1/restaurants/${r.id}`)
+				.set("Authorization", auth)
+				.send({ description: null, logoUrl: null })
+				.expect(200);
+			expect(res.body).toMatchObject({
+				description: null,
+				logoUrl: null,
+				bannerUrl: "https://cdn.example.com/banner.png",
+			});
+		});
+
 		it("patches only the given address fields", async () => {
 			const { http } = getE2eApp();
 			const { auth } = await owner();
@@ -301,6 +349,7 @@ describe("owner restaurants", () => {
 			["bad coordinates", { coordinates: [0, 100] }],
 			["unknown field", { slug: "hijack" }],
 			["unknown address field", { address: { country: "IN" } }],
+			["malformed bannerUrl", { bannerUrl: "not-a-url" }],
 		])("rejects %s with 400", async (_label, body) => {
 			const { auth } = await owner();
 			const r = await create(auth);

@@ -1,9 +1,6 @@
 import { FOOD_TYPES } from "@/domain/enums/food-type";
 import { RESTAURANT_STATUSES } from "@/domain/enums/restaurant-status";
-import type {
-	ICRUDTransformer,
-	TPage,
-} from "@/domain/interfaces/crud.interface";
+import type { TPage } from "@/domain/types/page.types";
 import type {
 	TCreateMenuItemInput,
 	TListMenuItemsInput,
@@ -24,8 +21,10 @@ import { type TMenuItemResponse, toMenuItemResponse } from "./menu-item.dto";
 import { parseOrBadRequest } from "./parse";
 import {
 	type TNearbyRestaurantResponse,
+	type TQrCodeResponse,
 	type TRestaurantResponse,
 	toNearbyRestaurantResponse,
+	toQrCodeResponse,
 	toRestaurantResponse,
 } from "./restaurant.dto";
 
@@ -43,6 +42,8 @@ const _DEFAULT_RADIUS_KM = 5;
 const _MAX_RADIUS_KM = 25;
 const _NEARBY_DEFAULT_LIMIT = 20;
 const _NEARBY_MAX_LIMIT = 50;
+const _MAX_DESCRIPTION = 500;
+const _MAX_URL = 2048;
 
 const _line = z.string().trim().min(1).max(_MAX_LINE);
 const _short = z.string().trim().min(1).max(_MAX_SHORT);
@@ -66,6 +67,9 @@ const _addressSchema = z
 	})
 	.strict();
 
+/** Shared with `OrderTransformer`, for the order delivery-address snapshot. */
+export const addressSchema = _addressSchema;
+
 /** `[longitude, latitude]`. */
 const _coordinates = z.tuple([
 	z.number().min(-180).max(180),
@@ -76,12 +80,19 @@ const _cuisines = z
 	.array(z.string().trim().toLowerCase().min(1).max(_MAX_CUISINE))
 	.min(1)
 	.max(_MAX_CUISINES);
+/** Nullable, optional text shown on the public page. */
+const _description = z.string().trim().max(_MAX_DESCRIPTION).nullable();
+/** Nullable, optional image URL (logo, banner, menu-item photo). */
+const _imageUrl = z.string().url().max(_MAX_URL).nullable();
 
 const _createRestaurantSchema = z
 	.object({
 		name: _name,
 		cuisines: _cuisines,
 		isPureVeg: z.boolean(),
+		description: _description.optional(),
+		logoUrl: _imageUrl.optional(),
+		bannerUrl: _imageUrl.optional(),
 		coordinates: _coordinates,
 		address: _addressSchema,
 	})
@@ -92,6 +103,9 @@ const _updateRestaurantSchema = z
 		name: _name.optional(),
 		cuisines: _cuisines.optional(),
 		isPureVeg: z.boolean().optional(),
+		description: _description.optional(),
+		logoUrl: _imageUrl.optional(),
+		bannerUrl: _imageUrl.optional(),
 		coordinates: _coordinates.optional(),
 		address: _addressSchema.partial().optional(),
 	})
@@ -116,6 +130,8 @@ const _createMenuItemSchema = z
 	.object({
 		name: _name,
 		category: _category,
+		description: _description.optional(),
+		imageUrl: _imageUrl.optional(),
 		priceInPaise: _price,
 		foodType: _foodType,
 		isAvailable: z.boolean().default(true),
@@ -126,6 +142,8 @@ const _updateMenuItemSchema = z
 	.object({
 		name: _name.optional(),
 		category: _category.optional(),
+		description: _description.optional(),
+		imageUrl: _imageUrl.optional(),
 		priceInPaise: _price.optional(),
 		foodType: _foodType.optional(),
 		isAvailable: z.boolean().optional(),
@@ -184,18 +202,11 @@ export type TMenuItemListResponse = {
 
 /**
  * Validates every restaurant and menu request and shapes the wire responses.
- * Restaurant CRUD implements the port; menu items, status, nearby and slug
- * lookups are extra methods on the same class.
+ * Menu items, status, nearby and slug lookups are extra methods on the same
+ * class.
  */
 @Injectable()
-export class RestaurantTransformer implements ICRUDTransformer<
-	TRestaurant,
-	TCreateRestaurantInput,
-	TUpdateRestaurantInput,
-	TListRestaurantsInput,
-	TRestaurantResponse,
-	TRestaurantListResponse
-> {
+export class RestaurantTransformer {
 	/** Body → create input (name, cuisines, isPureVeg, coordinates, address). */
 	public toCreateRequestDTO(body: unknown): TCreateRestaurantInput {
 		return parseOrBadRequest(_createRestaurantSchema, body);
@@ -218,6 +229,11 @@ export class RestaurantTransformer implements ICRUDTransformer<
 			...(data.name !== undefined ? { name: data.name } : {}),
 			...(data.cuisines !== undefined ? { cuisines: data.cuisines } : {}),
 			...(data.isPureVeg !== undefined ? { isPureVeg: data.isPureVeg } : {}),
+			...(data.description !== undefined
+				? { description: data.description }
+				: {}),
+			...(data.logoUrl !== undefined ? { logoUrl: data.logoUrl } : {}),
+			...(data.bannerUrl !== undefined ? { bannerUrl: data.bannerUrl } : {}),
 			...(data.coordinates !== undefined
 				? { coordinates: data.coordinates }
 				: {}),
@@ -318,6 +334,10 @@ export class RestaurantTransformer implements ICRUDTransformer<
 		const input: TUpdateMenuItemInput = {
 			...(data.name !== undefined ? { name: data.name } : {}),
 			...(data.category !== undefined ? { category: data.category } : {}),
+			...(data.description !== undefined
+				? { description: data.description }
+				: {}),
+			...(data.imageUrl !== undefined ? { imageUrl: data.imageUrl } : {}),
 			...(data.priceInPaise !== undefined
 				? { priceInPaise: data.priceInPaise }
 				: {}),
@@ -347,5 +367,10 @@ export class RestaurantTransformer implements ICRUDTransformer<
 		page: TPage<TMenuItem>,
 	): TMenuItemListResponse {
 		return { items: page.items.map(toMenuItemResponse), total: page.total };
+	}
+
+	/** QR code payload → wire DTO. */
+	public toQrCodeResponseDTO(data: TQrCodeResponse): TQrCodeResponse {
+		return toQrCodeResponse(data);
 	}
 }

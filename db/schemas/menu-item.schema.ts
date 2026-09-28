@@ -36,6 +36,10 @@ export const menuItems = pgTable(
 		priceInPaise: integer().notNull(),
 		foodType: foodTypeEnum().notNull(),
 		isAvailable: boolean().notNull().default(true),
+		/** Short description shown on the item's card. */
+		description: text(),
+		/** Public https URL to the item's photo. */
+		imageUrl: text(),
 		/**
 		 * Denormalized copy of the restaurant's location, for geo queries on
 		 * items. Must be updated whenever the restaurant's location changes.
@@ -69,6 +73,8 @@ export type TMenuItem = {
 	priceInPaise: number;
 	foodType: FoodType;
 	isAvailable: boolean;
+	description: string | null;
+	imageUrl: string | null;
 	location: TGeoPoint;
 	createdAt: Date;
 	updatedAt: Date;

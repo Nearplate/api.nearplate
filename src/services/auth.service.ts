@@ -145,6 +145,7 @@ export class AuthService {
 			{ email: burned.email },
 			this._toSignupRole(burned.intendedRole),
 			context,
+			{ enforceRole: true },
 		);
 	}
 
@@ -174,7 +175,10 @@ export class AuthService {
 	 * Spends the `state` (401 if unknown, expired or reused), exchanges `code`
 	 * for Google's claims using the matching PKCE verifier, and signs in. 401
 	 * for an unverified Google email. Linking to an existing account by email
-	 * is safe only because `email_verified` is required.
+	 * is safe only because `email_verified` is required. Unlike magic link,
+	 * the picked role never blocks an existing account -- Google already
+	 * proved the email in one step, so a returning user signs straight into
+	 * their real role instead of seeing a role-mismatch notice.
 	 */
 	public async verifyGoogle(
 		code: string,
@@ -204,6 +208,7 @@ export class AuthService {
 			},
 			this._toSignupRole(burned.intendedRole),
 			context,
+			{ enforceRole: false },
 		);
 	}
 
@@ -222,7 +227,9 @@ export class AuthService {
 	 * The shared tail of both login methods. Finds the user (Google sub first,
 	 * being the stable id, then email), enforces the picked role against an
 	 * existing account, or creates the user. `intendedRole` only ever applies to
-	 * a brand-new account; `admin` never comes from a request.
+	 * a brand-new account; `admin` never comes from a request. `enforceRole`
+	 * is false for Google, where identity is already proven and an existing
+	 * account should sign in under its real role rather than being blocked.
 	 */
 	private async _signIn(
 		proof: {
@@ -234,9 +241,15 @@ export class AuthService {
 		},
 		intendedRole: TSignupRole | undefined,
 		context: TClientContext,
+		{ enforceRole }: { enforceRole: boolean },
 	): Promise<TAuthResult> {
 		const existing = await this._findExisting(proof);
-		if (existing && intendedRole && existing.role !== intendedRole) {
+		if (
+			enforceRole &&
+			existing &&
+			intendedRole &&
+			existing.role !== intendedRole
+		) {
 			return { status: "role_mismatch", role: existing.role };
 		}
 		const user = existing
@@ -264,7 +277,12 @@ export class AuthService {
 		return this._userRepository.findByEmail(proof.email);
 	}
 
-	/** Marks the email verified and links Google, filling only empty profile fields. */
+	/**
+	 * Marks the email verified and links Google, filling only empty profile
+	 * fields. An existing account signing in through Google is always treated
+	 * as onboarded -- Google already proved who they are, so they go straight
+	 * into the app instead of being sent to the onboarding form.
+	 */
 	private async _verifyAndLink(
 		user: TUser,
 		proof: {
@@ -280,12 +298,13 @@ export class AuthService {
 				? { googleSub: proof.googleSub }
 				: {}),
 			...(!user.firstName && proof.firstName
-				? { firstName: proof.firstName, isOnboarded: true }
+				? { firstName: proof.firstName }
 				: {}),
 			...(!user.lastName && proof.lastName ? { lastName: proof.lastName } : {}),
 			...(!user.avatarUrl && proof.avatarUrl
 				? { avatarUrl: proof.avatarUrl }
 				: {}),
+			...(proof.googleSub && !user.isOnboarded ? { isOnboarded: true } : {}),
 		};
 		if (Object.keys(patch).length === 0) {
 			return user;
@@ -293,7 +312,12 @@ export class AuthService {
 		return (await this._userRepository.update(user.id, patch)) ?? user;
 	}
 
-	/** Creates the user; on a lost signup race, returns the winner's row. */
+	/**
+	 * Creates the user; on a lost signup race, returns the winner's row. Always
+	 * unonboarded, even when Google supplied a name -- a brand-new account
+	 * goes through the onboarding form once (prefilled from Google when
+	 * available) so it is confirmed, not silently accepted.
+	 */
 	private async _createUser(
 		proof: {
 			email: string;
@@ -309,7 +333,7 @@ export class AuthService {
 			role,
 			firstName: proof.firstName ?? null,
 			lastName: proof.lastName ?? null,
-			isOnboarded: Boolean(proof.firstName),
+			isOnboarded: false,
 			avatarUrl: proof.avatarUrl ?? null,
 			...(proof.googleSub ? { googleSub: proof.googleSub } : {}),
 			emailVerifiedAt: new Date(),

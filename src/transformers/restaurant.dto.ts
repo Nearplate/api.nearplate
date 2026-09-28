@@ -27,6 +27,9 @@ const _restaurantSchema = z.object({
 	status: z.enum(RESTAURANT_STATUSES),
 	cuisines: z.array(z.string()),
 	isPureVeg: z.boolean(),
+	description: z.string().nullable(),
+	logoUrl: z.string().nullable(),
+	bannerUrl: z.string().nullable(),
 	location: z.object({ coordinates: z.tuple([z.number(), z.number()]) }),
 	address: _addressResponseSchema,
 	createdAt: _date,
@@ -57,4 +60,17 @@ export function toNearbyRestaurantResponse(
 		...toRestaurantResponse(row),
 		distanceMeters: Math.round(row.distanceMeters),
 	};
+}
+
+const _qrCodeSchema = z.object({
+	url: z.string(),
+	pngDataUrl: z.string(),
+	svgDataUrl: z.string(),
+});
+
+export type TQrCodeResponse = z.infer<typeof _qrCodeSchema>;
+
+/** Validates the outgoing QR code payload before it reaches the wire. */
+export function toQrCodeResponse(data: TQrCodeResponse): TQrCodeResponse {
+	return _qrCodeSchema.parse(data);
 }
