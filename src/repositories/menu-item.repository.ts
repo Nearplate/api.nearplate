@@ -1,7 +1,7 @@
 import { DatabaseService } from "@/app/modules/database";
 import { LogClass } from "@/app/modules/logger";
 import type { FoodType } from "@/domain/enums/food-type";
-import type { TPage } from "@/domain/interfaces/crud.interface";
+import type { TPage } from "@/domain/types/page.types";
 import type {
 	TListMenuItemsInput,
 	TUpdateMenuItemInput,
@@ -29,8 +29,8 @@ export type TCreateMenuItemRecord = {
  * Data access for `menu_items`. Menu items are only reachable through their
  * restaurant, so every owner-facing query is scoped by **both** `ownerId` and
  * `restaurantId` in the filter: an item under the wrong restaurant, or someone
- * else's, is simply not found. That is why this class does not implement the
- * id-only `ICRUDRepository` signatures.
+ * else's, is simply not found. That is why this class does not use the
+ * id-only repository method signatures other collections share.
  */
 @LogClass()
 @Injectable()

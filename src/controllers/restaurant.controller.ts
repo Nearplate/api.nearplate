@@ -42,9 +42,9 @@ import {
  * the caller in the repository filter (foreign or unknown ids are 404).
  *
  * Route order matters: `mine` and `nearby` are declared before `:slug`,
- * otherwise they would be read as slugs. It does not implement
- * `ICRUDController` because there is no owner `get(id)` route (`GET :slug` is
- * the public lookup and `GET mine` lists the caller's restaurants).
+ * otherwise they would be read as slugs. There is no owner `get(id)` route
+ * (`GET :slug` is the public lookup and `GET mine` lists the caller's
+ * restaurants).
  */
 @LogClass()
 @Controller("restaurants")

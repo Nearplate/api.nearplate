@@ -1,14 +1,11 @@
 import { DatabaseService, type TDatabase } from "@/app/modules/database";
 import { LogClass } from "@/app/modules/logger";
-import type {
-	ICRUDRepository,
-	TPage,
-} from "@/domain/interfaces/crud.interface";
 import { RestaurantStatus } from "@/domain/enums/restaurant-status";
 import type {
 	TListRestaurantsInput,
 	TNearbyRestaurantsInput,
 } from "@/domain/types/restaurant.types";
+import type { TPage } from "@/domain/types/page.types";
 import { SlugHelper } from "@/helpers/slug.helper";
 import { isUniqueViolation, isUuid } from "@/repositories/repository.utils";
 import { addresses, type TAddress } from "@db/schemas/address.schema";
@@ -52,12 +49,7 @@ type TJoinedRow = {
 /** Data access for `restaurants`. Owner-facing methods are owner-scoped. */
 @LogClass()
 @Injectable()
-export class RestaurantRepository implements ICRUDRepository<
-	TRestaurant,
-	TCreateRestaurantRecord,
-	TUpdateRestaurantRecord,
-	TListRestaurantsInput
-> {
+export class RestaurantRepository {
 	constructor(
 		@Inject(DatabaseService)
 		private readonly _databaseService: DatabaseService,

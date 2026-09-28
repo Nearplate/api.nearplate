@@ -7,7 +7,7 @@ import type {
 	TUpdateMenuItemInput,
 } from "@/domain/types/menu-item.types";
 import type { RestaurantStatus } from "@/domain/enums/restaurant-status";
-import type { ICRUDService, TPage } from "@/domain/interfaces/crud.interface";
+import type { TPage } from "@/domain/types/page.types";
 import type {
 	TCoordinates,
 	TCreateRestaurantInput,
@@ -42,12 +42,7 @@ import { ConfigService } from "@nestjs/config";
  */
 @LogClass()
 @Injectable()
-export class RestaurantService implements ICRUDService<
-	TRestaurant,
-	TCreateRestaurantInput,
-	TUpdateRestaurantInput,
-	TListRestaurantsInput
-> {
+export class RestaurantService {
 	constructor(
 		@Inject(DatabaseService)
 		private readonly _databaseService: DatabaseService,

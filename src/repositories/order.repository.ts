@@ -2,7 +2,7 @@ import { DatabaseService } from "@/app/modules/database";
 import { LogClass } from "@/app/modules/logger";
 import type { OrderStatus } from "@/domain/enums/order-status";
 import type { TListOrdersInput } from "@/domain/types/order.types";
-import type { TPage } from "@/domain/interfaces/crud.interface";
+import type { TPage } from "@/domain/types/page.types";
 import { isUuid } from "@/repositories/repository.utils";
 import { orderItems, type TOrderItem } from "@db/schemas/order-item.schema";
 import {
@@ -36,7 +36,7 @@ export type TOrderWithItems = TOrder & { items: TOrderItem[] };
  * Data access for `orders`/`order_items`. An order is reachable either by its
  * owner (restaurant side) or by the customer who placed it, never both at
  * once, so lookups take an explicit scope rather than a single `ownerId`
- * like `ICRUDRepository` -- this is why the class does not implement it.
+ * like other collections' repositories.
  */
 @LogClass()
 @Injectable()

@@ -1,9 +1,6 @@
 import { FOOD_TYPES } from "@/domain/enums/food-type";
 import { RESTAURANT_STATUSES } from "@/domain/enums/restaurant-status";
-import type {
-	ICRUDTransformer,
-	TPage,
-} from "@/domain/interfaces/crud.interface";
+import type { TPage } from "@/domain/types/page.types";
 import type {
 	TCreateMenuItemInput,
 	TListMenuItemsInput,
@@ -205,18 +202,11 @@ export type TMenuItemListResponse = {
 
 /**
  * Validates every restaurant and menu request and shapes the wire responses.
- * Restaurant CRUD implements the port; menu items, status, nearby and slug
- * lookups are extra methods on the same class.
+ * Menu items, status, nearby and slug lookups are extra methods on the same
+ * class.
  */
 @Injectable()
-export class RestaurantTransformer implements ICRUDTransformer<
-	TRestaurant,
-	TCreateRestaurantInput,
-	TUpdateRestaurantInput,
-	TListRestaurantsInput,
-	TRestaurantResponse,
-	TRestaurantListResponse
-> {
+export class RestaurantTransformer {
 	/** Body → create input (name, cuisines, isPureVeg, coordinates, address). */
 	public toCreateRequestDTO(body: unknown): TCreateRestaurantInput {
 		return parseOrBadRequest(_createRestaurantSchema, body);

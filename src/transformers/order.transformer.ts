@@ -1,5 +1,5 @@
 import { ORDER_STATUSES } from "@/domain/enums/order-status";
-import type { TPage } from "@/domain/interfaces/crud.interface";
+import type { TPage } from "@/domain/types/page.types";
 import type {
 	TCreateOrderInput,
 	TListOrdersInput,
