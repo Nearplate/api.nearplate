@@ -34,8 +34,7 @@ export const PostgresConfigSchema = z.object({
 
 /** Cache Redis for `@DBCache` / `RedisCacheAdapter`. */
 export const RedisConfigSchema = z.object({
-	REDIS_HOST: _str.default("localhost"),
-	REDIS_PORT: _port.default(6379),
+	REDIS_URI: _str.url().default("redis://localhost:6379"),
 });
 
 /**

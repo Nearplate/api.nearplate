@@ -25,9 +25,7 @@ export class RedisCacheAdapter
 		@Inject(ConfigService)
 		private readonly _configService: ConfigService<TConfig>,
 	) {
-		this._client = new Redis({
-			host: this._configService.getOrThrow("REDIS_HOST"),
-			port: this._configService.getOrThrow("REDIS_PORT"),
+		this._client = new Redis(this._configService.getOrThrow("REDIS_URI"), {
 			lazyConnect: true,
 		});
 		RedisCacheAdapter._instance = this;

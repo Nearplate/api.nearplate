@@ -41,9 +41,10 @@ module.exports = async function globalSetup() {
 		);
 	}
 	await waitForTcp(uri.hostname, Number(uri.port || 5432), "Postgres");
+	const redisUri = new URL(process.env.REDIS_URI);
 	await waitForTcp(
-		process.env.REDIS_HOST,
-		Number(process.env.REDIS_PORT),
+		redisUri.hostname,
+		Number(redisUri.port || 6379),
 		"Redis cache",
 	);
 

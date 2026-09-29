@@ -10,8 +10,7 @@ function applyTestEnv() {
 		CORS_ORIGIN: "http://localhost:3400",
 		DATABASE_URL:
 			"postgres://postgres:postgres@localhost:5433/api_nearplate_test",
-		REDIS_HOST: "localhost",
-		REDIS_PORT: "6380",
+		REDIS_URI: "redis://localhost:6380",
 		JWT_ADMIN_ACCESS_SECRET: "e2e-admin-access",
 		JWT_RESTAURANT_ACCESS_SECRET: "e2e-restaurant-access",
 		JWT_USER_ACCESS_SECRET: "e2e-user-access",

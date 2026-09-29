@@ -43,7 +43,7 @@ Copy `.env.example` to `.env` before running locally.
 ## Docker
 
 - `Dockerfile`: multi-stage (build → prod deps → runtime), Node 22 alpine, runs as `node`, healthcheck on `/health`, `CMD node dist/src/main`. `package.json` must be in the image working directory (`AppService` reads it). `db/migrations` and `drizzle.config.ts` ship in the runtime image so `npm run db:migrate` can run against it.
-- `docker-compose.yml`: `api` + `postgres` (PostGIS) + `redis`. Config comes from `.env`; compose overrides `DATABASE_URL` / `REDIS_HOST` to the service hostnames and sets `NODE_ENV=production`. Only the API port is published. Migrations are **not** run automatically -- run `docker compose run --rm api npm run db:migrate` before the first `up`.
+- `docker-compose.yml`: `api` + `postgres` (PostGIS) + `redis`. Config comes from `.env`; set `REDIS_URI=redis://redis:6379` in `.env` so the API reaches the compose Redis service; compose sets `NODE_ENV=production`. Only the API port is published. Migrations are **not** run automatically -- run `docker compose run --rm api npm run db:migrate` before the first `up`.
 - `test/docker-compose.yml` is separate: just Postgres (host port 5433, PostGIS) and Redis (6380) for e2e. Keep the two independent.
 - A new required env var goes in `.env.example`; compose picks it up via `env_file`.
 - Compose runs with `NODE_ENV=production`, so `.env` must define `RESEND_API_KEY` or the API refuses to start.

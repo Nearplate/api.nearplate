@@ -19,7 +19,7 @@ npm run db:migrate       # applies db/migrations against DATABASE_URL
 npm run start:dev
 ```
 
-`.env.example` points at Postgres on `localhost:5432` and Redis on `localhost:6379`; adjust `DATABASE_URL` / `REDIS_PORT` if your local services differ (the test stack publishes Postgres on 5433 and Redis on 6380, so neither clashes with a developer's own instance).
+`.env.example` points at Postgres on `localhost:5432` and Redis on `localhost:6379`; adjust `DATABASE_URL` / `REDIS_URI` if your local services differ (the test stack publishes Postgres on 5433 and Redis on 6380, so neither clashes with a developer's own instance).
 
 ## Docker
 
@@ -31,7 +31,7 @@ docker compose logs -f api
 docker compose down              # add -v to also drop the Postgres volume
 ```
 
-Compose overrides `DATABASE_URL` and `REDIS_HOST` to its own services and runs with `NODE_ENV=production`; Postgres and Redis are not published to the host. `test/docker-compose.yml` is a separate stack used only by the e2e tests.
+Compose reads `.env`, so set `REDIS_URI=redis://redis:6379` there to reach its own Redis service, and it runs with `NODE_ENV=production`; Postgres and Redis are not published to the host. `test/docker-compose.yml` is a separate stack used only by the e2e tests.
 
 Because compose runs in production mode, `.env` must set `RESEND_API_KEY` (the API refuses to start without it) — see Authentication below.
 

@@ -94,9 +94,7 @@ export function getE2eApp(): TE2eApp {
 }
 
 async function _clearRedisKeys(): Promise<void> {
-	const client = new Redis({
-		host: process.env.REDIS_HOST ?? "localhost",
-		port: Number(process.env.REDIS_PORT ?? 6379),
+	const client = new Redis(process.env.REDIS_URI ?? "redis://localhost:6380", {
 		lazyConnect: true,
 	});
 	try {
