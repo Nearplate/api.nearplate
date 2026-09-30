@@ -2,6 +2,7 @@ import type { TConfig } from "@/app/modules/config";
 import { LogClass } from "@/app/modules/logger";
 import {
 	DeleteObjectsCommand,
+	HeadBucketCommand,
 	HeadObjectCommand,
 	NotFound,
 	S3Client,
@@ -79,6 +80,11 @@ export class S3StorageAdapter {
 			Fields: { "Content-Type": contentType },
 			Expires: ttlSeconds,
 		});
+	}
+
+	/** Liveness probe for `AppService`; throws if the bucket is unreachable. */
+	public async ping(): Promise<void> {
+		await this._client.send(new HeadBucketCommand({ Bucket: this._bucket }));
 	}
 
 	/** `null` when the object does not exist. */

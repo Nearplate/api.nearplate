@@ -25,6 +25,8 @@ export class FakeS3StorageAdapter {
 		};
 	}
 
+	public async ping(): Promise<void> {}
+
 	public async headObject(key: string): Promise<TFakeObject | null> {
 		return this._objects.get(key) ?? null;
 	}

@@ -48,6 +48,14 @@ export class RedisCacheAdapter
 		RedisCacheAdapter._instance = null;
 	}
 
+	/** Liveness probe for `AppService`; throws unless Redis answers PONG. */
+	public async ping(): Promise<void> {
+		const reply = await this._client.ping();
+		if (reply !== "PONG") {
+			throw new Error(`Unexpected Redis PING reply: ${reply}`);
+		}
+	}
+
 	public async get(key: string): Promise<string | null> {
 		return this._client.get(key);
 	}
