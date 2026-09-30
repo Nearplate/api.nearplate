@@ -116,6 +116,7 @@ export class OrderService {
 					state: input.deliveryAddress.state,
 					zipcode: input.deliveryAddress.zipcode,
 					phoneNumber: input.deliveryAddress.phoneNumber ?? null,
+					label: input.deliveryAddress.label ?? null,
 				},
 				items,
 			});

@@ -82,6 +82,11 @@ const _addressSchema = z
 /** Shared with `OrderTransformer`, for the order delivery-address snapshot. */
 export const addressSchema = _addressSchema;
 
+/** The order snapshot also keeps the address-book title (Home, Office). */
+export const deliveryAddressSchema = _addressSchema.extend({
+	label: _short.nullable().optional(),
+});
+
 /** `[longitude, latitude]`. */
 const _coordinates = z.tuple([
 	z.number().min(-180).max(180),

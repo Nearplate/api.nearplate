@@ -8,6 +8,7 @@ import { RestaurantStatus } from "@/domain/enums/restaurant-status";
 import type {
 	TAddCartItemInput,
 	TCheckoutCartInput,
+	TMergeCartsInput,
 	TPricedCart,
 	TPricedCartLine,
 	TUpdateCartItemInput,
@@ -116,6 +117,27 @@ export class CartService {
 		});
 	}
 
+	/**
+	 * Folds guest carts into the user's server carts on login. Best effort: a
+	 * missing restaurant or unknown menu item is dropped rather than failing
+	 * the whole call, so a stale browser cart never blocks sign-in. The guest
+	 * quantity wins for a line present on both sides; server-only lines stay.
+	 * An offline restaurant or unavailable item is kept (`canCheckout` and
+	 * `isAvailable` report it). Returns all of the user's carts afterwards.
+	 */
+	public async merge(
+		userId: string,
+		input: TMergeCartsInput,
+	): Promise<TPricedCart[]> {
+		return this._databaseService.transaction(async () => {
+			for (const guestCart of input.carts) {
+				await this._mergeGuestCart(userId, guestCart);
+			}
+			await this._cartRepository.evictOldest(userId, MAX_CARTS_PER_USER);
+			return this.list(userId);
+		});
+	}
+
 	/** Sets a line's quantity outright; 404 when the cart or line is missing. */
 	public async updateItem(
 		userId: string,
@@ -194,6 +216,38 @@ export class CartService {
 			await this._cartRepository.delete(cart.id);
 			return order;
 		});
+	}
+
+	/** Merges one guest cart; skips it when nothing in it is still valid. */
+	private async _mergeGuestCart(
+		userId: string,
+		guestCart: TMergeCartsInput["carts"][number],
+	): Promise<void> {
+		const restaurant = await this._restaurantRepository.findByIdPublic(
+			guestCart.restaurantId,
+		);
+		if (!restaurant) {
+			return;
+		}
+		const known = await this._menuItemRepository.findManyInRestaurant(
+			restaurant.id,
+			guestCart.items.map((line) => line.menuItemId),
+		);
+		const knownIds = new Set(known.map((item) => item.id));
+		const lines = guestCart.items.filter((line) =>
+			knownIds.has(line.menuItemId),
+		);
+		if (lines.length === 0) {
+			return;
+		}
+		const cart = await this._cartRepository.upsertCart(userId, restaurant.id);
+		for (const line of lines) {
+			await this._cartRepository.upsertItemQuantity(
+				cart.id,
+				line.menuItemId,
+				line.quantity,
+			);
+		}
 	}
 
 	/** Prices a joined cart row from its live menu-item fields. No mutation. */

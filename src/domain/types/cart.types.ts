@@ -39,3 +39,14 @@ export type TPricedCart = {
 	canCheckout: boolean;
 	updatedAt: Date;
 };
+
+/** One guest cart to fold into the user's server cart for the same restaurant. */
+export type TMergeCartInput = {
+	restaurantId: string;
+	items: TAddCartItemInput[];
+};
+
+/** Guest carts collected in the browser, merged into the account on login. */
+export type TMergeCartsInput = {
+	carts: TMergeCartInput[];
+};

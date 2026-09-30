@@ -23,6 +23,8 @@ export type TOrderDeliveryAddress = {
 	state: string;
 	zipcode: string;
 	phoneNumber: string | null;
+	/** Absent on orders placed before labels were snapshotted. */
+	label?: string | null;
 };
 
 /** One order placed by a customer against one restaurant. */

@@ -15,6 +15,7 @@ const _addressResponseSchema = z.object({
 	state: z.string(),
 	zipcode: z.string(),
 	phoneNumber: z.string().nullable(),
+	label: z.string().nullable().optional(),
 });
 
 const _orderItemSchema = z.object({

@@ -7,6 +7,7 @@ export type TOrderDeliveryAddressInput = {
 	state: string;
 	zipcode: string;
 	phoneNumber?: string | null;
+	label?: string | null;
 };
 
 /** One line item as the customer sends it; price and name come from the menu item. */

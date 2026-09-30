@@ -46,6 +46,21 @@ export class CartController {
 		return this._cartTransformer.toCartListResponseDTO(carts);
 	}
 
+	/**
+	 * Folds guest carts from the browser into the caller's server carts. Declared
+	 * before the `:restaurantId` routes so `merge` is never read as an id.
+	 */
+	@Post("merge")
+	@HttpCode(HttpStatus.OK)
+	public async merge(
+		@Body() body: unknown,
+		@AuthUser() user: TAuthUser,
+	): Promise<TCartListResponse> {
+		const input = this._cartTransformer.toMergeRequestDTO(body);
+		const carts = await this._cartService.merge(user.id, input);
+		return this._cartTransformer.toCartListResponseDTO(carts);
+	}
+
 	/** The caller's cart for one restaurant. */
 	@Get(":restaurantId")
 	public async get(

@@ -13,7 +13,7 @@ import type {
 import type { TOrder } from "@db/schemas/order.schema";
 import { Injectable } from "@nestjs/common";
 import { z } from "zod";
-import { addressSchema } from "./restaurant.transformer";
+import { deliveryAddressSchema } from "./restaurant.transformer";
 import {
 	type TCustomerOrderSummaryResponse,
 	type TOrderResponse,
@@ -47,7 +47,7 @@ const _createOrderSchema = z
 	.object({
 		restaurantId: z.string(),
 		items: z.array(_orderItemSchema).min(1).max(_MAX_ITEMS),
-		deliveryAddress: addressSchema,
+		deliveryAddress: deliveryAddressSchema,
 	})
 	.strict();
 

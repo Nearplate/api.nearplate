@@ -119,6 +119,25 @@ export class CartRepository {
 		await this._touch(cartId);
 	}
 
+	/**
+	 * Sets a line's quantity outright, inserting the line when it does not
+	 * exist yet (unlike `setItemQuantity`, which never inserts).
+	 */
+	public async upsertItemQuantity(
+		cartId: string,
+		menuItemId: string,
+		quantity: number,
+	): Promise<void> {
+		await this._databaseService.db
+			.insert(cartItems)
+			.values({ cartId, menuItemId, quantity })
+			.onConflictDoUpdate({
+				target: [cartItems.cartId, cartItems.menuItemId],
+				set: { quantity },
+			});
+		await this._touch(cartId);
+	}
+
 	/** Sets a line's quantity outright; null when the line does not exist. */
 	public async setItemQuantity(
 		cartId: string,
