@@ -9,7 +9,7 @@
 		"node": ">=22"
 	},
 	"scripts": {
-		"prepare": "husky",
+		"prepare": "husky || true",
 		"build": "nest build",
 		"start": "nest start",
 		"start:dev": "nest start --watch",
