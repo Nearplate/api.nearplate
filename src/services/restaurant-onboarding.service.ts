@@ -22,7 +22,7 @@ import type {
 	TKycDetails,
 	TUpdateKycInput,
 } from "@/domain/types/restaurant-kyc.types";
-import type { TOnboardingReviewData } from "@/domain/types/restaurant-review.types";
+import type { TOnboardingReviewData } from "@/domain/types/admin.types";
 import { BackgroundJobHelper } from "@/helpers/background-job.helper";
 import { EncryptionHelper } from "@/helpers/encryption.helper";
 import { RestaurantDocumentRepository } from "@/repositories/restaurant-document.repository";

@@ -2,6 +2,7 @@ import { LogClass } from "@/app/modules/logger";
 import { AuthUser } from "@/decorators/auth-user.decorator";
 import { Roles } from "@/decorators/role.decorator";
 import { AuthRole } from "@/domain/enums/auth-role";
+import { RestaurantOnboardingService } from "@/services/restaurant-onboarding.service";
 import { RestaurantService } from "@/services/restaurant.service";
 import type { TMenuItemResponse } from "@/transformers/menu-item.dto";
 import type { TOrderSummaryResponse } from "@/transformers/order.dto";
@@ -10,14 +11,18 @@ import {
 	type TOrderListResponse,
 } from "@/transformers/order.transformer";
 import type {
+	TDocumentUploadResponse,
 	TImageUploadResponse,
+	TKycResponse,
 	TNearbyRestaurantResponse,
 	TOwnerRestaurantResponse,
 	TQrCodeResponse,
+	TRestaurantDocumentResponse,
 	TRestaurantResponse,
 } from "@/transformers/restaurant.dto";
 import {
 	RestaurantTransformer,
+	type TDocumentListResponse,
 	type TMenuItemListResponse,
 	type TRestaurantListResponse,
 } from "@/transformers/restaurant.transformer";
@@ -37,7 +42,9 @@ import {
 } from "@nestjs/common";
 
 /**
- * Restaurants and their menus: public discovery plus owner management.
+ * Restaurants and their menus: public discovery plus owner management,
+ * including onboarding data (KYC details and private documents, served by
+ * `RestaurantOnboardingService`).
  *
  * The class mixes public and owner routes, so `@Roles(AuthRole.Restaurant)` is
  * on each owner handler rather than on the class. Owner routes are scoped to
@@ -58,6 +65,8 @@ export class RestaurantController {
 		private readonly _restaurantService: RestaurantService,
 		@Inject(OrderTransformer)
 		private readonly _orderTransformer: OrderTransformer,
+		@Inject(RestaurantOnboardingService)
+		private readonly _restaurantOnboardingService: RestaurantOnboardingService,
 	) {}
 
 	/** Creates a restaurant and its address. */
@@ -149,6 +158,109 @@ export class RestaurantController {
 			id,
 		);
 		return this._restaurantTransformer.toUpdateResponseDTO(restaurant);
+	}
+
+	/** The caller's KYC and bank details, PAN and account number masked. */
+	@Roles(AuthRole.Restaurant)
+	@Get(":id/kyc")
+	public async getKyc(
+		@Param("id") id: string,
+		@AuthUser() user: TAuthUser,
+	): Promise<TKycResponse> {
+		const kyc = await this._restaurantOnboardingService.getKyc(user.id, id);
+		return this._restaurantTransformer.toGetKycResponseDTO(kyc);
+	}
+
+	/** Saves any subset of the KYC and bank details (partial drafts allowed). */
+	@Roles(AuthRole.Restaurant)
+	@Patch(":id/kyc")
+	public async updateKyc(
+		@Param("id") id: string,
+		@Body() body: unknown,
+		@AuthUser() user: TAuthUser,
+	): Promise<TKycResponse> {
+		const input = this._restaurantTransformer.toUpdateKycRequestDTO(body);
+		const kyc = await this._restaurantOnboardingService.updateKyc(
+			user.id,
+			id,
+			input,
+		);
+		return this._restaurantTransformer.toUpdateKycResponseDTO(kyc);
+	}
+
+	/** Requests a presigned S3 POST for one KYC document type. */
+	@Roles(AuthRole.Restaurant)
+	@Post(":id/documents")
+	@HttpCode(HttpStatus.CREATED)
+	public async createDocumentUpload(
+		@Param("id") id: string,
+		@Body() body: unknown,
+		@AuthUser() user: TAuthUser,
+	): Promise<TDocumentUploadResponse> {
+		const input =
+			this._restaurantTransformer.toCreateDocumentUploadRequestDTO(body);
+		const upload = await this._restaurantOnboardingService.createDocumentUpload(
+			user.id,
+			id,
+			input,
+		);
+		return this._restaurantTransformer.toCreateDocumentUploadResponseDTO(
+			upload,
+		);
+	}
+
+	/** The caller's documents, each with a short-lived download URL once confirmed. */
+	@Roles(AuthRole.Restaurant)
+	@Get(":id/documents")
+	public async listDocuments(
+		@Param("id") id: string,
+		@AuthUser() user: TAuthUser,
+	): Promise<TDocumentListResponse> {
+		const documents = await this._restaurantOnboardingService.listDocuments(
+			user.id,
+			id,
+		);
+		return this._restaurantTransformer.toListDocumentsResponseDTO(documents);
+	}
+
+	/** Confirms an uploaded document against S3. */
+	@Roles(AuthRole.Restaurant)
+	@Post(":id/documents/:type/confirm")
+	@HttpCode(HttpStatus.OK)
+	public async confirmDocumentUpload(
+		@Param("id") id: string,
+		@Param("type") type: string,
+		@AuthUser() user: TAuthUser,
+	): Promise<TRestaurantDocumentResponse> {
+		const documentType =
+			this._restaurantTransformer.toDocumentTypeRequestDTO(type);
+		const document =
+			await this._restaurantOnboardingService.confirmDocumentUpload(
+				user.id,
+				id,
+				documentType,
+			);
+		return this._restaurantTransformer.toConfirmDocumentUploadResponseDTO(
+			document,
+		);
+	}
+
+	/** Deletes a document and its S3 object. */
+	@Roles(AuthRole.Restaurant)
+	@Delete(":id/documents/:type")
+	@HttpCode(HttpStatus.NO_CONTENT)
+	public async removeDocument(
+		@Param("id") id: string,
+		@Param("type") type: string,
+		@AuthUser() user: TAuthUser,
+	): Promise<void> {
+		const documentType =
+			this._restaurantTransformer.toDocumentTypeRequestDTO(type);
+		await this._restaurantOnboardingService.removeDocument(
+			user.id,
+			id,
+			documentType,
+		);
 	}
 
 	/** Deletes the caller's restaurant with its menu items and address. */
