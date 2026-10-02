@@ -1,58 +1,47 @@
 import { createS3Client } from "@/adapters/s3-client";
+import type {
+	THeadObjectResult,
+	TPresignedPost,
+} from "@/adapters/s3-storage.adapter";
 import type { TConfig } from "@/app/modules/config";
 import { LogClass } from "@/app/modules/logger";
 import {
 	DeleteObjectsCommand,
-	HeadBucketCommand,
+	GetObjectCommand,
 	HeadObjectCommand,
 	NotFound,
 	S3Client,
 } from "@aws-sdk/client-s3";
 import { createPresignedPost } from "@aws-sdk/s3-presigned-post";
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { Inject, Injectable } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 
 /** `S3.deleteObjects` accepts at most 1000 keys per call. */
 const _DELETE_BATCH_SIZE = 1000;
 
-export type TPresignedPost = {
-	url: string;
-	fields: Record<string, string>;
-};
-
-export type THeadObjectResult = {
-	sizeBytes: number;
-	contentType: string | null;
-};
-
 /**
- * Thin wrapper over the S3 SDK for a single public bucket. Presigned POSTs
- * let the browser upload bytes straight to S3 (never through this API);
- * `headObject`/`deleteObjects` back the confirm/cancel/sweep flows in
- * `RestaurantService`.
+ * Thin wrapper over the S3 SDK for the private KYC documents bucket
+ * (`S3_DOCUMENTS_BUCKET`). Unlike `S3StorageAdapter` there is deliberately no
+ * public URL: objects are only readable through short-lived presigned GETs.
  */
 @LogClass()
 @Injectable()
-export class S3StorageAdapter {
+export class S3DocumentStorageAdapter {
 	private readonly _client: S3Client;
 	private readonly _bucket: string;
-	private readonly _publicBaseUrl: string;
 
 	constructor(
 		@Inject(ConfigService)
 		private readonly _configService: ConfigService<TConfig>,
 	) {
-		this._bucket = this._configService.getOrThrow("S3_BUCKET");
-		this._publicBaseUrl = this._configService
-			.getOrThrow<string>("S3_PUBLIC_BASE_URL")
-			.replace(/\/+$/, "");
+		this._bucket = this._configService.getOrThrow("S3_DOCUMENTS_BUCKET");
 		this._client = createS3Client(this._configService);
 	}
 
 	/**
 	 * A presigned POST scoped to exactly `key`, `contentType` and a byte-size
-	 * range -- S3 itself rejects any upload that does not match, so validation
-	 * does not rely on the client behaving.
+	 * range, so S3 rejects any upload that does not match.
 	 */
 	public async createPresignedPost(
 		key: string,
@@ -70,11 +59,6 @@ export class S3StorageAdapter {
 			Fields: { "Content-Type": contentType },
 			Expires: ttlSeconds,
 		});
-	}
-
-	/** Liveness probe for `AppService`; throws if the bucket is unreachable. */
-	public async ping(): Promise<void> {
-		await this._client.send(new HeadBucketCommand({ Bucket: this._bucket }));
 	}
 
 	/** `null` when the object does not exist. */
@@ -95,7 +79,7 @@ export class S3StorageAdapter {
 		}
 	}
 
-	/** Deletes every key, batched to S3's 1000-key limit per call. Best effort per batch. */
+	/** Deletes every key, batched to S3's 1000-key limit per call. */
 	public async deleteObjects(keys: string[]): Promise<void> {
 		for (let i = 0; i < keys.length; i += _DELETE_BATCH_SIZE) {
 			const batch = keys.slice(i, i + _DELETE_BATCH_SIZE);
@@ -111,21 +95,18 @@ export class S3StorageAdapter {
 		}
 	}
 
-	/** The public URL an object key resolves to. */
-	public publicUrl(key: string): string {
-		return `${this._publicBaseUrl}/${key}`;
-	}
-
 	/**
-	 * The object key backing a public URL, or `null` if `url` is not one of
-	 * ours (an owner-pasted external URL must never be deleted).
+	 * A presigned GET for one object, valid for `ttlSeconds`. Signing is local
+	 * (no S3 round trip), so listing documents stays cheap.
 	 */
-	public keyFromPublicUrl(url: string): string | null {
-		const prefix = `${this._publicBaseUrl}/`;
-		if (!url.startsWith(prefix)) {
-			return null;
-		}
-		const key = url.slice(prefix.length);
-		return key.length > 0 ? key : null;
+	public async presignedGetUrl(
+		key: string,
+		ttlSeconds: number,
+	): Promise<string> {
+		return getSignedUrl(
+			this._client,
+			new GetObjectCommand({ Bucket: this._bucket, Key: key }),
+			{ expiresIn: ttlSeconds },
+		);
 	}
 }

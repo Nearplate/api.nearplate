@@ -30,8 +30,10 @@ function applyTestEnv() {
 		S3_REGION: "us-east-1",
 		S3_PUBLIC_BASE_URL: "https://e2e-bucket.s3.us-east-1.amazonaws.com",
 		S3_FORCE_PATH_STYLE: "false",
+		S3_DOCUMENTS_BUCKET: "e2e-documents",
 		UPLOAD_URL_TTL_SECONDS: "600",
 		UPLOAD_PENDING_TTL_SECONDS: "3600",
+		DOCUMENT_URL_TTL_SECONDS: "300",
 	});
 
 	delete process.env.LOKI_HOST;

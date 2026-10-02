@@ -109,12 +109,20 @@ export const S3ConfigSchema = z.object({
 		.default("false"),
 	S3_ACCESS_KEY_ID: _str.optional(),
 	S3_SECRET_ACCESS_KEY: _str.optional(),
+	/**
+	 * Private bucket for restaurant KYC documents, on the same region, endpoint
+	 * and credentials as `S3_BUCKET`. Objects are only ever read through
+	 * short-lived presigned GET URLs; it must not allow public reads.
+	 */
+	S3_DOCUMENTS_BUCKET: _str.min(1),
 });
 
 /** Presigned-upload lifetime and how long an unconfirmed upload is kept. */
 export const UploadConfigSchema = z.object({
 	UPLOAD_URL_TTL_SECONDS: _seconds.default(600), // 10 minutes
 	UPLOAD_PENDING_TTL_SECONDS: _seconds.default(3600), // 1 hour
+	/** Lifetime of a presigned GET URL for a private KYC document. */
+	DOCUMENT_URL_TTL_SECONDS: _seconds.default(300), // 5 minutes
 });
 
 export const ConfigSchema = NodeConfigSchema.merge(LogConfigSchema)

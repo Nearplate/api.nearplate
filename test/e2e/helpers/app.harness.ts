@@ -1,6 +1,7 @@
 import { GoogleOauthAdapter } from "@/adapters/google-oauth.adapter";
 import { JwtAdapter } from "@/adapters/jwt.adapter";
 import { ResendAdapter } from "@/adapters/resend.adapter";
+import { S3DocumentStorageAdapter } from "@/adapters/s3-document-storage.adapter";
 import { S3StorageAdapter } from "@/adapters/s3-storage.adapter";
 import { AppModule } from "@/app/app.module";
 import { configureApp } from "@/app/configure-app";
@@ -31,6 +32,7 @@ import { randomUUID } from "node:crypto";
 import request from "supertest";
 import { FakeGoogleOauthAdapter } from "./fakes/google-oauth.adapter.fake";
 import { FakeResendAdapter } from "./fakes/resend.adapter.fake";
+import { FakeS3DocumentStorageAdapter } from "./fakes/s3-document-storage.adapter.fake";
 import { FakeS3StorageAdapter } from "./fakes/s3-storage.adapter.fake";
 
 const _REDIS_KEY_PATTERNS = ["dbcache:*", "ratelimit:*"];
@@ -56,6 +58,8 @@ export type TE2eApp = {
 	resend: FakeResendAdapter;
 	google: FakeGoogleOauthAdapter;
 	s3: FakeS3StorageAdapter;
+	/** The private KYC documents bucket. */
+	documents: FakeS3DocumentStorageAdapter;
 	/** `Authorization` header value for a freshly signed token. */
 	authHeader: (role: AuthRole, sub?: string) => string;
 	/** Inserts a verified user and returns it with a valid access token. */
@@ -124,6 +128,7 @@ export async function startE2eApp(): Promise<TE2eApp> {
 	const resend = new FakeResendAdapter();
 	const google = new FakeGoogleOauthAdapter();
 	const s3 = new FakeS3StorageAdapter();
+	const documents = new FakeS3DocumentStorageAdapter();
 	const moduleRef = await Test.createTestingModule({
 		imports: [AppModule],
 	})
@@ -133,6 +138,8 @@ export async function startE2eApp(): Promise<TE2eApp> {
 		.useValue(google)
 		.overrideProvider(S3StorageAdapter)
 		.useValue(s3)
+		.overrideProvider(S3DocumentStorageAdapter)
+		.useValue(documents)
 		.compile();
 
 	const app = moduleRef.createNestApplication({ bufferLogs: true });
@@ -150,6 +157,7 @@ export async function startE2eApp(): Promise<TE2eApp> {
 		resend,
 		google,
 		s3,
+		documents,
 		authHeader: (role, sub = randomUUID()) =>
 			`Bearer ${jwt.signAccessToken(sub, role)}`,
 		seedUser: async (input = {}) => {
@@ -223,6 +231,7 @@ export async function startE2eApp(): Promise<TE2eApp> {
 			resend.reset();
 			google.reset();
 			s3.reset();
+			documents.reset();
 		},
 	};
 	return _ctx;
