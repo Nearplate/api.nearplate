@@ -13,7 +13,7 @@ import { addresses, type TAddress } from "@db/schemas/address.schema";
 import type { TGeoPoint } from "@db/schemas/geo";
 import { restaurants, type TRestaurant } from "@db/schemas/restaurant.schema";
 import { Inject, Injectable } from "@nestjs/common";
-import { and, count, desc, eq, sql } from "drizzle-orm";
+import { and, count, desc, eq, inArray, sql } from "drizzle-orm";
 
 const _SLUG_ATTEMPTS = 5;
 
@@ -154,6 +154,39 @@ export class RestaurantRepository {
 			.update(restaurants)
 			.set(patch)
 			.where(and(eq(restaurants.id, id), eq(restaurants.ownerId, ownerId)))
+			.returning({ id: restaurants.id });
+		if (!updated) {
+			return null;
+		}
+		return this._selectJoined(this._databaseService.db, eq(restaurants.id, id));
+	}
+
+	/**
+	 * Moves a restaurant's verification state, but only while it is still in one
+	 * of `fromStatuses` (so two concurrent transitions cannot both win). Not
+	 * owner-scoped: callers check ownership or admin rights first. Null when
+	 * the id is unknown or the restaurant is no longer in a `fromStatuses` state.
+	 */
+	public async updateVerification(
+		id: string,
+		fromStatuses: readonly RestaurantVerificationStatus[],
+		patch: Pick<
+			TUpdateRestaurantRecord,
+			"verificationStatus" | "rejectionReason" | "submittedAt" | "reviewedAt"
+		>,
+	): Promise<TRestaurant | null> {
+		if (!isUuid(id)) {
+			return null;
+		}
+		const [updated] = await this._databaseService.db
+			.update(restaurants)
+			.set(patch)
+			.where(
+				and(
+					eq(restaurants.id, id),
+					inArray(restaurants.verificationStatus, [...fromStatuses]),
+				),
+			)
 			.returning({ id: restaurants.id });
 		if (!updated) {
 			return null;

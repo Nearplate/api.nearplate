@@ -56,6 +56,12 @@ import {
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 
+/** Verification states an owner may submit for review from. */
+const _SUBMITTABLE_STATUSES: readonly RestaurantVerificationStatus[] = [
+	RestaurantVerificationStatus.Draft,
+	RestaurantVerificationStatus.Rejected,
+];
+
 /** Batch size for one sweep run; keeps a single cron tick bounded. */
 const _SWEEP_BATCH_SIZE = 200;
 
@@ -221,6 +227,44 @@ export class RestaurantService {
 			throw new NotFoundException();
 		}
 		return updated;
+	}
+
+	/**
+	 * Sends a draft or rejected restaurant to admin review. 409 when it is in
+	 * any other verification state or its required data is incomplete.
+	 */
+	public async submitForReview(
+		ownerId: string,
+		id: string,
+	): Promise<TRestaurant> {
+		const current = await this.get(ownerId, id);
+		if (!_SUBMITTABLE_STATUSES.includes(current.verificationStatus)) {
+			throw new ConflictException(
+				ErrorMessages.restaurantVerificationTransitionNotAllowed(
+					current.verificationStatus,
+					RestaurantVerificationStatus.PendingReview,
+				),
+			);
+		}
+		this._assertReadyForReview(current);
+		const submitted = await this._restaurantRepository.updateVerification(
+			id,
+			_SUBMITTABLE_STATUSES,
+			{
+				verificationStatus: RestaurantVerificationStatus.PendingReview,
+				submittedAt: new Date(),
+				rejectionReason: null,
+			},
+		);
+		if (!submitted) {
+			throw new ConflictException(
+				ErrorMessages.restaurantVerificationTransitionNotAllowed(
+					current.verificationStatus,
+					RestaurantVerificationStatus.PendingReview,
+				),
+			);
+		}
+		return submitted;
 	}
 
 	/** Public lookup by slug; an offline restaurant is still returned. */
@@ -687,4 +731,11 @@ export class RestaurantService {
 	private _toPoint(coordinates: TCoordinates): TGeoPoint {
 		return { type: "Point", coordinates };
 	}
+
+	/**
+	 * Placeholder for the onboarding completeness check (documents, KYC and
+	 * bank details arrive with the onboarding data feature). Throws 409 with
+	 * `Errors.restaurantIncomplete(missing)` once there is something to check.
+	 */
+	private _assertReadyForReview(_restaurant: TRestaurant): void {}
 }

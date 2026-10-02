@@ -136,6 +136,21 @@ export class RestaurantController {
 		return this._restaurantTransformer.toUpdateResponseDTO(restaurant);
 	}
 
+	/** Submits the caller's draft or rejected restaurant for admin review. */
+	@Roles(AuthRole.Restaurant)
+	@Post(":id/submit")
+	@HttpCode(HttpStatus.OK)
+	public async submit(
+		@Param("id") id: string,
+		@AuthUser() user: TAuthUser,
+	): Promise<TOwnerRestaurantResponse> {
+		const restaurant = await this._restaurantService.submitForReview(
+			user.id,
+			id,
+		);
+		return this._restaurantTransformer.toUpdateResponseDTO(restaurant);
+	}
+
 	/** Deletes the caller's restaurant with its menu items and address. */
 	@Roles(AuthRole.Restaurant)
 	@Delete(":id")
