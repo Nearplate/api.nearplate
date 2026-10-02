@@ -1,7 +1,9 @@
 import { DatabaseService, type TDatabase } from "@/app/modules/database";
 import { LogClass } from "@/app/modules/logger";
 import { RestaurantStatus } from "@/domain/enums/restaurant-status";
+import { RestaurantVerificationStatus } from "@/domain/enums/restaurant-verification-status";
 import type {
+	TListRestaurantsForReviewInput,
 	TListRestaurantsInput,
 	TNearbyRestaurantsInput,
 } from "@/domain/types/restaurant.types";
@@ -12,9 +14,15 @@ import { addresses, type TAddress } from "@db/schemas/address.schema";
 import type { TGeoPoint } from "@db/schemas/geo";
 import { restaurants, type TRestaurant } from "@db/schemas/restaurant.schema";
 import { Inject, Injectable } from "@nestjs/common";
-import { and, count, desc, eq, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, inArray, sql } from "drizzle-orm";
 
 const _SLUG_ATTEMPTS = 5;
+
+/** Customer-visible restaurants only. */
+const _isApproved = eq(
+	restaurants.verificationStatus,
+	RestaurantVerificationStatus.Approved,
+);
 
 /** Persistence-level create: the address already exists, coordinates are GeoJSON. */
 export type TCreateRestaurantRecord = {
@@ -37,6 +45,10 @@ export type TUpdateRestaurantRecord = Partial<{
 	bannerUrl: string | null;
 	location: TGeoPoint;
 	status: RestaurantStatus;
+	verificationStatus: RestaurantVerificationStatus;
+	rejectionReason: string | null;
+	submittedAt: Date | null;
+	reviewedAt: Date | null;
 }>;
 
 export type TNearbyRestaurant = TRestaurant & { distanceMeters: number };
@@ -150,6 +162,72 @@ export class RestaurantRepository {
 		return this._selectJoined(this._databaseService.db, eq(restaurants.id, id));
 	}
 
+	/**
+	 * Moves a restaurant's verification state, but only while it is still in one
+	 * of `fromStatuses` (so two concurrent transitions cannot both win). Not
+	 * owner-scoped: callers check ownership or admin rights first. Null when
+	 * the id is unknown or the restaurant is no longer in a `fromStatuses` state.
+	 */
+	public async updateVerification(
+		id: string,
+		fromStatuses: readonly RestaurantVerificationStatus[],
+		patch: Pick<
+			TUpdateRestaurantRecord,
+			"verificationStatus" | "rejectionReason" | "submittedAt" | "reviewedAt"
+		>,
+	): Promise<TRestaurant | null> {
+		if (!isUuid(id)) {
+			return null;
+		}
+		const [updated] = await this._databaseService.db
+			.update(restaurants)
+			.set(patch)
+			.where(
+				and(
+					eq(restaurants.id, id),
+					inArray(restaurants.verificationStatus, [...fromStatuses]),
+				),
+			)
+			.returning({ id: restaurants.id });
+		if (!updated) {
+			return null;
+		}
+		return this._selectJoined(this._databaseService.db, eq(restaurants.id, id));
+	}
+
+	/** Admin review queue: one verification state, oldest submission first. */
+	public async listByVerificationStatus(
+		query: TListRestaurantsForReviewInput,
+	): Promise<TPage<TRestaurant>> {
+		const filter = eq(restaurants.verificationStatus, query.verificationStatus);
+		const [rows, [totalRow]] = await Promise.all([
+			this._databaseService.db
+				.select({ restaurant: restaurants, address: addresses })
+				.from(restaurants)
+				.innerJoin(addresses, eq(restaurants.addressId, addresses.id))
+				.where(filter)
+				.orderBy(asc(restaurants.submittedAt), asc(restaurants.id))
+				.limit(query.limit)
+				.offset(query.offset),
+			this._databaseService.db
+				.select({ total: count() })
+				.from(restaurants)
+				.where(filter),
+		]);
+		return {
+			items: rows.map((row) => this._toRow(row)),
+			total: totalRow?.total ?? 0,
+		};
+	}
+
+	/** Lookup by id for admins: no owner scope, any verification state. */
+	public async findByIdAny(id: string): Promise<TRestaurant | null> {
+		if (!isUuid(id)) {
+			return null;
+		}
+		return this._selectJoined(this._databaseService.db, eq(restaurants.id, id));
+	}
+
 	/** True when a restaurant was deleted. */
 	public async delete(ownerId: string, id: string): Promise<boolean> {
 		if (!isUuid(id)) {
@@ -163,26 +241,32 @@ export class RestaurantRepository {
 	}
 
 	/**
-	 * Lookup by id with no owner scope, for callers (order placement) that
-	 * need the restaurant's status and `ownerId` without owning it themselves.
+	 * Customer-facing lookup by id with no owner scope (order placement, carts).
+	 * Only approved restaurants are visible; anything else is null.
 	 */
 	public async findByIdPublic(id: string): Promise<TRestaurant | null> {
 		if (!isUuid(id)) {
 			return null;
 		}
-		return this._selectJoined(this._databaseService.db, eq(restaurants.id, id));
-	}
-
-	/** Public lookup by slug (any status, so clients can show "closed"). */
-	public async findBySlug(slug: string): Promise<TRestaurant | null> {
 		return this._selectJoined(
 			this._databaseService.db,
-			eq(restaurants.slug, slug),
+			and(eq(restaurants.id, id), _isApproved),
 		);
 	}
 
 	/**
-	 * Online restaurants within `radiusMeters` of a point, nearest first, with
+	 * Public lookup by slug (any online status, so clients can show "closed").
+	 * Only approved restaurants are visible.
+	 */
+	public async findBySlug(slug: string): Promise<TRestaurant | null> {
+		return this._selectJoined(
+			this._databaseService.db,
+			and(eq(restaurants.slug, slug), _isApproved),
+		);
+	}
+
+	/**
+	 * Approved, online restaurants within `radiusMeters` of a point, nearest first, with
 	 * `distanceMeters`. Casts `location` to `geography` so `ST_DWithin` and
 	 * `ST_Distance` measure real meters over the sphere, not planar degrees.
 	 */
@@ -203,6 +287,7 @@ export class RestaurantRepository {
 			.where(
 				and(
 					eq(restaurants.status, RestaurantStatus.Online),
+					_isApproved,
 					sql`ST_DWithin(${restaurants.location}::geography, ${point}, ${input.radiusMeters})`,
 					input.isPureVeg !== undefined
 						? eq(restaurants.isPureVeg, input.isPureVeg)

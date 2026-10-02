@@ -1,6 +1,7 @@
 import { AuthRole } from "@/domain/enums/auth-role";
 import { RestaurantStatus } from "@/domain/enums/restaurant-status";
 import { RestaurantService } from "@/services/restaurant.service";
+import { RestaurantVerificationStatus } from "@/domain/enums/restaurant-verification-status";
 import { getE2eApp } from "../../helpers/app.harness";
 
 const DELIVERY_ADDRESS = {
@@ -143,6 +144,31 @@ describe("POST /v1/orders", () => {
 			code: "MENU_ITEMS_NOT_IN_RESTAURANT",
 			message: `One or more menu items do not belong to restaurant ${restaurant.name}`,
 		});
+	});
+
+	it("returns 404 when the restaurant is not approved", async () => {
+		const { http, seedRestaurant, seedMenuItem } = getE2eApp();
+		const ownerUser = await getE2eApp().seedUser({ role: AuthRole.Restaurant });
+		const restaurant = await seedRestaurant(
+			ownerUser.id,
+			{},
+			{
+				verificationStatus: RestaurantVerificationStatus.PendingReview,
+				status: RestaurantStatus.Online,
+			},
+		);
+		const item = await seedMenuItem(ownerUser.id, restaurant.id);
+		const { auth } = await customer();
+
+		await http
+			.post("/v1/orders")
+			.set("Authorization", auth)
+			.send({
+				restaurantId: restaurant.id,
+				items: [{ menuItemId: item.id, quantity: 1 }],
+				deliveryAddress: DELIVERY_ADDRESS,
+			})
+			.expect(404);
 	});
 
 	it("returns 403 for non-user roles and 401 without a token", async () => {

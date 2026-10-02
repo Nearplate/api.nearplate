@@ -34,6 +34,27 @@ export const ErrorMessages = {
 			`Restaurant ${restaurantName} is not accepting orders right now`,
 		),
 
+	restaurantNotApproved: (restaurantName: string): TAppError =>
+		appError(
+			"RESTAURANT_NOT_APPROVED",
+			`Restaurant ${restaurantName} must be approved before it can go online`,
+		),
+
+	restaurantVerificationTransitionNotAllowed: (
+		from: string,
+		to: string,
+	): TAppError =>
+		appError(
+			"RESTAURANT_VERIFICATION_TRANSITION_NOT_ALLOWED",
+			`Restaurant verification cannot move from ${from} to ${to}`,
+		),
+
+	restaurantIncomplete: (missing: readonly string[]): TAppError =>
+		appError(
+			"RESTAURANT_INCOMPLETE",
+			`Restaurant is missing required data: ${missing.join(", ")}`,
+		),
+
 	menuItemsNotInRestaurant: (restaurantName: string): TAppError =>
 		appError(
 			"MENU_ITEMS_NOT_IN_RESTAURANT",

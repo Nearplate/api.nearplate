@@ -12,6 +12,7 @@ import {
 import type {
 	TImageUploadResponse,
 	TNearbyRestaurantResponse,
+	TOwnerRestaurantResponse,
 	TQrCodeResponse,
 	TRestaurantResponse,
 } from "@/transformers/restaurant.dto";
@@ -66,7 +67,7 @@ export class RestaurantController {
 	public async create(
 		@Body() body: unknown,
 		@AuthUser() user: TAuthUser,
-	): Promise<TRestaurantResponse> {
+	): Promise<TOwnerRestaurantResponse> {
 		const input = this._restaurantTransformer.toCreateRequestDTO(body);
 		const restaurant = await this._restaurantService.create(user.id, input);
 		return this._restaurantTransformer.toCreateResponseDTO(restaurant);
@@ -112,7 +113,7 @@ export class RestaurantController {
 		@Param("id") id: string,
 		@Body() body: unknown,
 		@AuthUser() user: TAuthUser,
-	): Promise<TRestaurantResponse> {
+	): Promise<TOwnerRestaurantResponse> {
 		const input = this._restaurantTransformer.toUpdateRequestDTO(body);
 		const restaurant = await this._restaurantService.update(user.id, id, input);
 		return this._restaurantTransformer.toUpdateResponseDTO(restaurant);
@@ -125,12 +126,27 @@ export class RestaurantController {
 		@Param("id") id: string,
 		@Body() body: unknown,
 		@AuthUser() user: TAuthUser,
-	): Promise<TRestaurantResponse> {
+	): Promise<TOwnerRestaurantResponse> {
 		const { status } = this._restaurantTransformer.toStatusRequestDTO(body);
 		const restaurant = await this._restaurantService.setStatus(
 			user.id,
 			id,
 			status,
+		);
+		return this._restaurantTransformer.toUpdateResponseDTO(restaurant);
+	}
+
+	/** Submits the caller's draft or rejected restaurant for admin review. */
+	@Roles(AuthRole.Restaurant)
+	@Post(":id/submit")
+	@HttpCode(HttpStatus.OK)
+	public async submit(
+		@Param("id") id: string,
+		@AuthUser() user: TAuthUser,
+	): Promise<TOwnerRestaurantResponse> {
+		const restaurant = await this._restaurantService.submitForReview(
+			user.id,
+			id,
 		);
 		return this._restaurantTransformer.toUpdateResponseDTO(restaurant);
 	}
@@ -173,7 +189,7 @@ export class RestaurantController {
 		@Param("id") id: string,
 		@Param("uploadId") uploadId: string,
 		@AuthUser() user: TAuthUser,
-	): Promise<TRestaurantResponse> {
+	): Promise<TOwnerRestaurantResponse> {
 		const restaurant = await this._restaurantService.confirmImageUpload(
 			user.id,
 			id,

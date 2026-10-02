@@ -2,6 +2,7 @@ import type { TNearbyRestaurant } from "@/repositories/restaurant.repository";
 import type { TRestaurant } from "@db/schemas/restaurant.schema";
 import { z } from "zod";
 import { RESTAURANT_STATUSES } from "@/domain/enums/restaurant-status";
+import { RESTAURANT_VERIFICATION_STATUSES } from "@/domain/enums/restaurant-verification-status";
 import type { TImageUploadResponse as TImageUploadInput } from "@/domain/types/upload.types";
 
 const _date = z.coerce.date().transform((d) => d.toISOString());
@@ -51,6 +52,44 @@ export type TNearbyRestaurantResponse = TRestaurantResponse & {
 export function toRestaurantResponse(row: TRestaurant): TRestaurantResponse {
 	const { location, ...rest } = _restaurantSchema.parse(row);
 	return { ...rest, coordinates: location.coordinates };
+}
+
+const _ownerFieldsSchema = z.object({
+	verificationStatus: z.enum(RESTAURANT_VERIFICATION_STATUSES),
+	rejectionReason: z.string().nullable(),
+});
+
+/** Owner-facing wire shape: the public shape plus the review state. */
+export type TOwnerRestaurantResponse = TRestaurantResponse &
+	z.infer<typeof _ownerFieldsSchema>;
+
+/** Row → owner wire DTO (never used on public routes). */
+export function toOwnerRestaurantResponse(
+	row: TRestaurant,
+): TOwnerRestaurantResponse {
+	return {
+		...toRestaurantResponse(row),
+		..._ownerFieldsSchema.parse(row),
+	};
+}
+
+/** Admin wire shape: the owner shape plus the owner id and review times. */
+export type TAdminRestaurantResponse = TOwnerRestaurantResponse & {
+	ownerId: string;
+	submittedAt: string | null;
+	reviewedAt: string | null;
+};
+
+/** Row → admin wire DTO (admin routes only). */
+export function toAdminRestaurantResponse(
+	row: TRestaurant,
+): TAdminRestaurantResponse {
+	return {
+		...toOwnerRestaurantResponse(row),
+		ownerId: row.ownerId,
+		submittedAt: row.submittedAt ? row.submittedAt.toISOString() : null,
+		reviewedAt: row.reviewedAt ? row.reviewedAt.toISOString() : null,
+	};
 }
 
 /** Nearby row → wire DTO with the distance rounded to whole metres. */

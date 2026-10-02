@@ -86,14 +86,25 @@ New Drizzle tables go in a new `db/schemas/{name}.schema.ts` and are re-exported
 ## Routes and domain
 
 - **Everything is under `/v1`** except `/` and `/health` (kept unprefixed for the Docker healthcheck). The prefix, logger, tracing, access log and CORS are set up in `src/app/configure-app.ts`, used by both `main.ts` and the e2e harness — add HTTP-layer setup there, never in only one of them.
-- Tables (`db/schemas/`): `users` (one role each: `admin`|`restaurant`|`user`; `firstName`, `lastName`, `isOnboarded`, `googleSub`), `addresses`, `restaurants` (`ownerId`, unique `slug`, `status`, `addressId`→addresses, `cuisines`, `isPureVeg`, PostGIS `location` `geometry(Point,4326)`, mapped to/from GeoJSON `[lng, lat]` by `db/schemas/geo.ts`), `menu_items` (`restaurantId`, `ownerId`, `priceInPaise`, `foodType`, `isAvailable`, `location`), plus `auth_tokens` / `auth_sessions`. Relations (FKs): users 1—N restaurants 1—N menu_items (`ON DELETE CASCADE`); restaurants N—1 addresses (`ON DELETE RESTRICT`).
+- Tables (`db/schemas/`): `users` (one role each: `admin`|`restaurant`|`user`; `firstName`, `lastName`, `isOnboarded`, `googleSub`), `addresses`, `restaurants` (`ownerId`, unique `slug`, `status`, `verificationStatus`, `addressId`→addresses, `cuisines`, `isPureVeg`, PostGIS `location` `geometry(Point,4326)`, mapped to/from GeoJSON `[lng, lat]` by `db/schemas/geo.ts`), `menu_items` (`restaurantId`, `ownerId`, `priceInPaise`, `foodType`, `isAvailable`, `location`), plus `auth_tokens` / `auth_sessions`. Relations (FKs): users 1—N restaurants 1—N menu_items (`ON DELETE CASCADE`); restaurants N—1 addresses (`ON DELETE RESTRICT`).
 - Controllers: `users/me` (any signed-in role) and **one** `restaurants` controller for everything restaurant- and menu-related. There is no `/owner` prefix: it mixes public routes (`nearby`, `:slug`, `:slug/menu`) with owner routes (create, `mine`, update, `:id/status`, delete, and menu items at `:id/menu/items[/:itemId[/availability]]`). **`@Roles(AuthRole.Restaurant)` is on each owner handler**, not the class. Declare `mine` and `nearby` before `:slug`. `RestaurantService` also owns the menu logic (no separate menu service); `MenuItemRepository` scopes every owner query by both `ownerId` and `restaurant`, so an item under the wrong restaurant is a 404.
 - Only `restaurant` accounts create restaurants/menus; there is no runtime role promotion. Sign-up `role` decides the account type.
 - **Money is integer paise** (`priceInPaise`), never a float. Cuisines are stored lowercase.
 - Denormalized fields must be kept in sync: `MenuItem.ownerId` (never changes) and `MenuItem.location` (`RestaurantService.update` rewrites it when coordinates change).
 - `RestaurantService.create`/`update`/`remove` run inside a Postgres transaction (`DatabaseService.transaction`), so a failure partway through leaves nothing behind -- no manual compensation.
-- `GET restaurants/nearby` uses PostGIS `ST_DWithin`/`ST_Distance` on `location::geography` (`radiusKm` ≤ 25, online only, nearest first).
+- `GET restaurants/nearby` uses PostGIS `ST_DWithin`/`ST_Distance` on `location::geography` (`radiusKm` ≤ 25, approved and online only, nearest first).
 - Slugs come from the name (`SlugHelper`), retry with a random suffix on collision, and never change on rename.
+
+## Restaurant verification
+
+- Lifecycle (`restaurants.verificationStatus`, `RestaurantVerificationStatus`): `draft` → (owner) `POST restaurants/:id/submit` → `pending_review` → (admin) `approve` → `approved` or `reject {reason}` → `rejected`; a `rejected` restaurant can be resubmitted (clears `rejectionReason`). Other transitions are 409 (`Errors.restaurantVerificationTransitionNotAllowed`); transitions are conditional updates (`RestaurantRepository.updateVerification`), so concurrent ones cannot both win. `submittedAt`/`reviewedAt` record when.
+- Customers only see `approved` restaurants: `RestaurantRepository.nearby`, `findBySlug` (`:slug`, `:slug/menu`) and `findByIdPublic` (carts, checkout, `POST /orders`) filter on it, so anything else is a 404. `CartService` `canCheckout` also requires approval.
+- Owners keep full access to their own restaurant and menu in every state (owner queries are owner-scoped, not verification-scoped), so a menu can be prepared while pending. Going `online` before approval is 409 (`Errors.restaurantNotApproved`); new restaurants start `offline`. The migration backfilled existing restaurants to `approved`.
+- Owner responses (`TOwnerRestaurantResponse`) include `verificationStatus` and `rejectionReason`; public responses never do. Admin responses (`TAdminRestaurantResponse`) add `ownerId`, `submittedAt`, `reviewedAt`.
+- `AdminRestaurantController` (`admin/restaurants`, `@Roles(AuthRole.Admin)` on each handler) backed by `RestaurantReviewService`: `GET` (queue, `?status=` default `pending_review`, oldest submission first, paginated), `GET :id`, `POST :id/approve`, `POST :id/reject {reason}`.
+- `RestaurantService._assertReadyForReview` is a no-op placeholder; the onboarding data feature wires in the required-data check (409 `Errors.restaurantIncomplete`).
+- Decided default, not yet implemented because those fields do not exist: editing documents or bank details after approval sends the restaurant back to `pending_review`; menu and profile edits do not.
+- Tests: `seedRestaurant(ownerId, overrides?, state?)` defaults to `approved` + `online`; pass `state` (`verificationStatus`, `status`, `rejectionReason`) to seed another state.
 
 ## Uploads
 
