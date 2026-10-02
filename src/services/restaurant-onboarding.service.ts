@@ -5,7 +5,10 @@ import { LogClass } from "@/app/modules/logger";
 import { MAX_DOCUMENT_BYTES } from "@/domain/constants/document";
 import { extensionForContentType } from "@/domain/constants/upload";
 import { RestaurantDocumentStatus } from "@/domain/enums/restaurant-document-status";
-import type { RestaurantDocumentType } from "@/domain/enums/restaurant-document-type";
+import {
+	RESTAURANT_DOCUMENT_TYPES,
+	type RestaurantDocumentType,
+} from "@/domain/enums/restaurant-document-type";
 import { RestaurantVerificationStatus } from "@/domain/enums/restaurant-verification-status";
 import type {
 	TCreateDocumentUploadInput,
@@ -45,6 +48,16 @@ const _EDITABLE_STATUSES: readonly RestaurantVerificationStatus[] = [
 	RestaurantVerificationStatus.Rejected,
 ];
 
+/** KYC fields required before submitting for review, in reporting order. */
+const _REQUIRED_KYC_FIELDS = [
+	"panNumber",
+	"fssaiNumber",
+	"accountHolderName",
+	"accountNumber",
+	"ifscCode",
+	"bankName",
+] as const;
+
 /** KYC details before anything has been saved. */
 const _EMPTY_KYC: TKycDetails = {
 	panNumber: null,
@@ -81,6 +94,41 @@ export class RestaurantOnboardingService {
 		@Inject(EncryptionHelper)
 		private readonly _encryptionHelper: EncryptionHelper,
 	) {}
+
+	/**
+	 * What still blocks `restaurantId` from review: every document type not yet
+	 * confirmed (pending uploads do not count), then every missing KYC field,
+	 * by its wire name. Empty when the restaurant is ready to submit.
+	 */
+	public async listMissingForReview(
+		ownerId: string,
+		restaurantId: string,
+	): Promise<string[]> {
+		const [documents, kyc] = await Promise.all([
+			this._restaurantDocumentRepository.listForRestaurant(
+				ownerId,
+				restaurantId,
+			),
+			this._restaurantKycRepository.findByRestaurantId(ownerId, restaurantId),
+		]);
+		const uploaded = new Set(
+			documents
+				.filter((doc) => doc.status === RestaurantDocumentStatus.Uploaded)
+				.map((doc) => doc.type),
+		);
+		const saved: Record<(typeof _REQUIRED_KYC_FIELDS)[number], unknown> = {
+			panNumber: kyc?.panNumberEncrypted,
+			fssaiNumber: kyc?.fssaiNumber,
+			accountHolderName: kyc?.accountHolderName,
+			accountNumber: kyc?.accountNumberEncrypted,
+			ifscCode: kyc?.ifscCode,
+			bankName: kyc?.bankName,
+		};
+		return [
+			...RESTAURANT_DOCUMENT_TYPES.filter((type) => !uploaded.has(type)),
+			..._REQUIRED_KYC_FIELDS.filter((field) => !saved[field]),
+		];
+	}
 
 	/** The caller's decrypted KYC details (all null before the first save). */
 	public async getKyc(ownerId: string, id: string): Promise<TKycDetails> {

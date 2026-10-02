@@ -9,6 +9,7 @@ import { DatabaseService } from "@/app/modules/database";
 import { AuthRole } from "@/domain/enums/auth-role";
 import { FoodType } from "@/domain/enums/food-type";
 import { RestaurantStatus } from "@/domain/enums/restaurant-status";
+import { RESTAURANT_DOCUMENT_TYPES } from "@/domain/enums/restaurant-document-type";
 import { RestaurantVerificationStatus } from "@/domain/enums/restaurant-verification-status";
 import type { TCreateMenuItemInput } from "@/domain/types/menu-item.types";
 import type {
@@ -16,7 +17,10 @@ import type {
 	TCreateOrderItemInput,
 } from "@/domain/types/order.types";
 import type { TCreateRestaurantInput } from "@/domain/types/restaurant.types";
+import { EncryptionHelper } from "@/helpers/encryption.helper";
 import type { TOrderWithItems } from "@/repositories/order.repository";
+import { RestaurantDocumentRepository } from "@/repositories/restaurant-document.repository";
+import { RestaurantKycRepository } from "@/repositories/restaurant-kyc.repository";
 import { RestaurantRepository } from "@/repositories/restaurant.repository";
 import { UserRepository } from "@/repositories/user.repository";
 import { OrderService } from "@/services/order.service";
@@ -79,6 +83,11 @@ export type TE2eApp = {
 			Pick<TRestaurant, "verificationStatus" | "status" | "rejectionReason">
 		>,
 	) => Promise<TRestaurant>;
+	/**
+	 * Saves complete KYC details and marks all six documents uploaded, so the
+	 * restaurant passes the submit-for-review completeness check.
+	 */
+	seedOnboarding: (ownerId: string, restaurantId: string) => Promise<void>;
 	/** Creates a menu item on one of `ownerId`'s restaurants. */
 	seedMenuItem: (
 		ownerId: string,
@@ -201,6 +210,37 @@ export async function startE2eApp(): Promise<TE2eApp> {
 				.get(RestaurantRepository)
 				.update(ownerId, created.id, state);
 			return seeded ?? created;
+		},
+		seedOnboarding: async (ownerId, restaurantId) => {
+			const encryption = app.get(EncryptionHelper);
+			await app.get(RestaurantKycRepository).upsert(ownerId, restaurantId, {
+				panNumberEncrypted: encryption.encrypt("ABCDE1234F"),
+				fssaiNumber: "12345678901234",
+				accountHolderName: "Asha Rao",
+				accountNumberEncrypted: encryption.encrypt("123456789012"),
+				ifscCode: "HDFC0001234",
+				bankName: "HDFC Bank",
+			});
+			const documents = app.get(RestaurantDocumentRepository);
+			for (const type of RESTAURANT_DOCUMENT_TYPES) {
+				const objectKey = `${restaurantId}_seed_${type}.pdf`;
+				await documents.upsertPending({
+					ownerId,
+					restaurantId,
+					type,
+					objectKey,
+					contentType: "application/pdf",
+					size: 1024,
+					expiresAt: new Date(Date.now() + 60 * 60 * 1000),
+				});
+				await documents.markUploaded(
+					ownerId,
+					restaurantId,
+					type,
+					objectKey,
+					1024,
+				);
+			}
 		},
 		seedMenuItem: (ownerId, restaurantId, overrides = {}) =>
 			app.get(RestaurantService).createMenuItem(ownerId, restaurantId, {

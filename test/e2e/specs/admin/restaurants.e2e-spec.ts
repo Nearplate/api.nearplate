@@ -145,7 +145,7 @@ describe("admin restaurant review", () => {
 
 		it("rejects with a reason the owner sees, then allows a resubmit", async () => {
 			const { http } = getE2eApp();
-			const { restaurant, auth: ownerAuth } = await ownerWithRestaurant();
+			const { user, restaurant, auth: ownerAuth } = await ownerWithRestaurant();
 
 			const rejected = await http
 				.post(`/v1/admin/restaurants/${restaurant.id}/reject`)
@@ -167,6 +167,7 @@ describe("admin restaurant review", () => {
 				rejectionReason: "FSSAI number unreadable",
 			});
 
+			await getE2eApp().seedOnboarding(user.id, restaurant.id);
 			const resubmitted = await http
 				.post(`/v1/restaurants/${restaurant.id}/submit`)
 				.set("Authorization", ownerAuth)

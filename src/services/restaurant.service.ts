@@ -41,6 +41,7 @@ import {
 } from "@/repositories/restaurant.repository";
 import { UploadRepository } from "@/repositories/upload.repository";
 import { OrderService } from "@/services/order.service";
+import { RestaurantOnboardingService } from "@/services/restaurant-onboarding.service";
 import type { TQrCodeResponse } from "@/transformers/restaurant.dto";
 import type { TGeoPoint } from "@db/schemas/geo";
 import type { TMenuItem } from "@db/schemas/menu-item.schema";
@@ -96,6 +97,8 @@ export class RestaurantService {
 		private readonly _s3StorageAdapter: S3StorageAdapter,
 		@Inject(BackgroundJobHelper)
 		private readonly _backgroundJobHelper: BackgroundJobHelper,
+		@Inject(RestaurantOnboardingService)
+		private readonly _restaurantOnboardingService: RestaurantOnboardingService,
 	) {}
 
 	/**
@@ -246,7 +249,7 @@ export class RestaurantService {
 				),
 			);
 		}
-		this._assertReadyForReview(current);
+		await this._assertReadyForReview(ownerId, current);
 		const submitted = await this._restaurantRepository.updateVerification(
 			id,
 			_SUBMITTABLE_STATUSES,
@@ -733,9 +736,20 @@ export class RestaurantService {
 	}
 
 	/**
-	 * Placeholder for the onboarding completeness check (documents, KYC and
-	 * bank details arrive with the onboarding data feature). Throws 409 with
-	 * `Errors.restaurantIncomplete(missing)` once there is something to check.
+	 * 409 `restaurantIncomplete` listing every confirmed document and KYC
+	 * field the restaurant still lacks; resolves when it is ready for review.
 	 */
-	private _assertReadyForReview(_restaurant: TRestaurant): void {}
+	private async _assertReadyForReview(
+		ownerId: string,
+		restaurant: TRestaurant,
+	): Promise<void> {
+		const missing =
+			await this._restaurantOnboardingService.listMissingForReview(
+				ownerId,
+				restaurant.id,
+			);
+		if (missing.length > 0) {
+			throw new ConflictException(ErrorMessages.restaurantIncomplete(missing));
+		}
+	}
 }
