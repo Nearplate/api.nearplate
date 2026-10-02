@@ -43,6 +43,13 @@
       "when": 1790625190913,
       "tag": "0005_nostalgic_the_executioner",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1790931063217,
+      "tag": "0006_skinny_sleepwalker",
+      "breakpoints": true
     }
   ]
 }

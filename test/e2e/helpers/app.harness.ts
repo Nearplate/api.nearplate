@@ -7,6 +7,8 @@ import { configureApp } from "@/app/configure-app";
 import { DatabaseService } from "@/app/modules/database";
 import { AuthRole } from "@/domain/enums/auth-role";
 import { FoodType } from "@/domain/enums/food-type";
+import { RestaurantStatus } from "@/domain/enums/restaurant-status";
+import { RestaurantVerificationStatus } from "@/domain/enums/restaurant-verification-status";
 import type { TCreateMenuItemInput } from "@/domain/types/menu-item.types";
 import type {
 	TCreateOrderInput,
@@ -14,6 +16,7 @@ import type {
 } from "@/domain/types/order.types";
 import type { TCreateRestaurantInput } from "@/domain/types/restaurant.types";
 import type { TOrderWithItems } from "@/repositories/order.repository";
+import { RestaurantRepository } from "@/repositories/restaurant.repository";
 import { UserRepository } from "@/repositories/user.repository";
 import { OrderService } from "@/services/order.service";
 import { RestaurantService } from "@/services/restaurant.service";
@@ -66,6 +69,9 @@ export type TE2eApp = {
 	seedRestaurant: (
 		ownerId: string,
 		overrides?: Partial<TCreateRestaurantInput>,
+		state?: Partial<
+			Pick<TRestaurant, "verificationStatus" | "status" | "rejectionReason">
+		>,
 	) => Promise<TRestaurant>;
 	/** Creates a menu item on one of `ownerId`'s restaurants. */
 	seedMenuItem: (
@@ -160,8 +166,15 @@ export async function startE2eApp(): Promise<TE2eApp> {
 			}
 			return { ...user, accessToken: jwt.signAccessToken(user.id, role) };
 		},
-		seedRestaurant: (ownerId, overrides = {}) =>
-			app.get(RestaurantService).create(ownerId, {
+		seedRestaurant: async (
+			ownerId,
+			overrides = {},
+			state = {
+				verificationStatus: RestaurantVerificationStatus.Approved,
+				status: RestaurantStatus.Online,
+			},
+		) => {
+			const created = await app.get(RestaurantService).create(ownerId, {
 				name: "Spice Hub",
 				cuisines: ["indian"],
 				isPureVeg: false,
@@ -173,7 +186,12 @@ export async function startE2eApp(): Promise<TE2eApp> {
 					zipcode: "560001",
 				},
 				...overrides,
-			}),
+			});
+			const seeded = await app
+				.get(RestaurantRepository)
+				.update(ownerId, created.id, state);
+			return seeded ?? created;
+		},
 		seedMenuItem: (ownerId, restaurantId, overrides = {}) =>
 			app.get(RestaurantService).createMenuItem(ownerId, restaurantId, {
 				name: "Paneer Tikka",

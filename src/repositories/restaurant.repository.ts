@@ -1,6 +1,7 @@
 import { DatabaseService, type TDatabase } from "@/app/modules/database";
 import { LogClass } from "@/app/modules/logger";
 import { RestaurantStatus } from "@/domain/enums/restaurant-status";
+import { RestaurantVerificationStatus } from "@/domain/enums/restaurant-verification-status";
 import type {
 	TListRestaurantsInput,
 	TNearbyRestaurantsInput,
@@ -37,6 +38,10 @@ export type TUpdateRestaurantRecord = Partial<{
 	bannerUrl: string | null;
 	location: TGeoPoint;
 	status: RestaurantStatus;
+	verificationStatus: RestaurantVerificationStatus;
+	rejectionReason: string | null;
+	submittedAt: Date | null;
+	reviewedAt: Date | null;
 }>;
 
 export type TNearbyRestaurant = TRestaurant & { distanceMeters: number };

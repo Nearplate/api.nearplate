@@ -11,6 +11,10 @@ import {
 	timestamp,
 	uuid,
 } from "drizzle-orm/pg-core";
+import {
+	RESTAURANT_VERIFICATION_STATUSES,
+	RestaurantVerificationStatus,
+} from "@/domain/enums/restaurant-verification-status";
 import type { TAddress } from "./address.schema";
 import { addresses } from "./address.schema";
 import { geoPoint, type TGeoPoint } from "./geo";
@@ -19,6 +23,11 @@ import { users } from "./user.schema";
 export const restaurantStatusEnum = pgEnum(
 	"restaurant_status",
 	RESTAURANT_STATUSES,
+);
+
+export const restaurantVerificationStatusEnum = pgEnum(
+	"restaurant_verification_status",
+	RESTAURANT_VERIFICATION_STATUSES,
 );
 
 /** A restaurant owned by exactly one user (`ownerId` = that user's id). */
@@ -33,7 +42,15 @@ export const restaurants = pgTable(
 		name: text().notNull(),
 		/** Public URL identifier, generated from `name`; stable across renames. */
 		slug: text().notNull().unique(),
-		status: restaurantStatusEnum().notNull().default(RestaurantStatus.Online),
+		status: restaurantStatusEnum().notNull().default(RestaurantStatus.Offline),
+		/** Customers only see `approved` restaurants. */
+		verificationStatus: restaurantVerificationStatusEnum()
+			.notNull()
+			.default(RestaurantVerificationStatus.Draft),
+		/** Set by an admin when rejecting; cleared on resubmit. */
+		rejectionReason: text(),
+		submittedAt: timestamp({ withTimezone: true }),
+		reviewedAt: timestamp({ withTimezone: true }),
 		addressId: uuid()
 			.notNull()
 			.unique()
@@ -57,6 +74,7 @@ export const restaurants = pgTable(
 	(table) => [
 		index("restaurants_owner_id_idx").on(table.ownerId),
 		index("restaurants_status_idx").on(table.status),
+		index("restaurants_verification_status_idx").on(table.verificationStatus),
 		index("restaurants_location_gix").using("gist", table.location),
 	],
 );
@@ -68,6 +86,10 @@ export type TRestaurant = {
 	name: string;
 	slug: string;
 	status: RestaurantStatus;
+	verificationStatus: RestaurantVerificationStatus;
+	rejectionReason: string | null;
+	submittedAt: Date | null;
+	reviewedAt: Date | null;
 	address: TAddress;
 	cuisines: string[];
 	isPureVeg: boolean;
