@@ -1,7 +1,11 @@
 import { AuthRole } from "@/domain/enums/auth-role";
 import { RestaurantStatus } from "@/domain/enums/restaurant-status";
 import { RestaurantVerificationStatus } from "@/domain/enums/restaurant-verification-status";
+import { DatabaseService } from "@/app/modules/database";
 import { RestaurantRepository } from "@/repositories/restaurant.repository";
+import { UploadCleanupSubscriber } from "@/subscribers/upload-cleanup.subscriber";
+import { restaurantDocuments } from "@db/schemas/restaurant-document.schema";
+import { eq } from "drizzle-orm";
 import { getE2eApp } from "../../helpers/app.harness";
 
 const MISSING_ID = "6f1c2b9e-4a3d-4c1b-9e2f-0a1b2c3d4e5f";
@@ -247,6 +251,48 @@ describe("restaurant documents", () => {
 				.delete(`/v1/restaurants/${restaurant.id}/documents/aadhaar_front`)
 				.set("Authorization", auth)
 				.expect(404);
+		});
+	});
+
+	describe("sweep", () => {
+		it("deletes expired pending uploads and keeps confirmed ones", async () => {
+			const { app, http, documents } = getE2eApp();
+			const { restaurant, auth } = await ownerWithRestaurant();
+			const confirmedKey = await upload(auth, restaurant.id);
+			const pending = await presign(auth, restaurant.id, {
+				...PDF_BODY,
+				type: "pan_front",
+			});
+			await app
+				.get(DatabaseService)
+				.db.update(restaurantDocuments)
+				.set({ expiresAt: new Date(Date.now() - 60_000) })
+				.where(eq(restaurantDocuments.objectKey, pending.fields.key));
+
+			await app.get(UploadCleanupSubscriber).sweepExpiredDocumentUploads();
+
+			expect(documents.deletedKeys).toEqual([pending.fields.key]);
+			expect(documents.deletedKeys).not.toContain(confirmedKey);
+			const list = await http
+				.get(`/v1/restaurants/${restaurant.id}/documents`)
+				.set("Authorization", auth)
+				.expect(200);
+			expect(list.body.items).toEqual([
+				expect.objectContaining({
+					type: "aadhaar_front",
+					status: "uploaded",
+				}),
+			]);
+		});
+
+		it("leaves unexpired pending uploads alone", async () => {
+			const { app, documents } = getE2eApp();
+			const { restaurant, auth } = await ownerWithRestaurant();
+			await presign(auth, restaurant.id);
+
+			await app.get(UploadCleanupSubscriber).sweepExpiredDocumentUploads();
+
+			expect(documents.deletedKeys).toEqual([]);
 		});
 	});
 

@@ -48,6 +48,9 @@ const _EDITABLE_STATUSES: readonly RestaurantVerificationStatus[] = [
 	RestaurantVerificationStatus.Rejected,
 ];
 
+/** Batch size for one sweep run; keeps a single cron tick bounded. */
+const _SWEEP_BATCH_SIZE = 200;
+
 /** KYC fields required before submitting for review, in reporting order. */
 const _REQUIRED_KYC_FIELDS = [
 	"panNumber",
@@ -311,6 +314,28 @@ export class RestaurantOnboardingService {
 			throw new NotFoundException();
 		}
 		await this._s3DocumentStorageAdapter.deleteObjects([deleted.objectKey]);
+	}
+
+	/**
+	 * Deletes every pending document upload past its `expiresAt`, oldest
+	 * first. Objects go before rows, so a mid-sweep failure leaves the row for
+	 * the next run instead of orphaning the object; rows confirmed mid-sweep
+	 * are kept (only still-pending rows are deleted).
+	 */
+	public async sweepExpiredDocumentUploads(): Promise<void> {
+		const expired =
+			await this._restaurantDocumentRepository.listExpiredPending(
+				_SWEEP_BATCH_SIZE,
+			);
+		if (expired.length === 0) {
+			return;
+		}
+		await this._s3DocumentStorageAdapter.deleteObjects(
+			expired.map((document) => document.objectKey),
+		);
+		await this._restaurantDocumentRepository.deletePendingByIds(
+			expired.map((document) => document.id),
+		);
 	}
 
 	/** The caller's restaurant or 404. */
