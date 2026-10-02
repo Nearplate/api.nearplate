@@ -17,11 +17,11 @@ import { ConfigService } from "@nestjs/config";
 const _DELETE_BATCH_SIZE = 1000;
 
 /**
- * Which bucket an operation targets: `public` holds logos, banners and menu
- * photos (`S3_BUCKET`); `documents` holds private KYC documents
+ * Which bucket an operation targets: `image` holds logos, banners and menu
+ * photos (`S3_IMAGE_BUCKET`); `documents` holds private KYC documents
  * (`S3_DOCUMENTS_BUCKET`), which are only ever read via presigned GETs.
  */
-export type TS3Bucket = "public" | "documents";
+export type TS3Bucket = "image" | "documents";
 
 export type TPresignedPost = {
 	url: string;
@@ -37,7 +37,7 @@ export type THeadObjectResult = {
  * Thin wrapper over the S3 SDK for both buckets, sharing one client. Presigned
  * POSTs let the browser upload bytes straight to S3 (never through this API);
  * `headObject`/`deleteObjects` back the confirm/cancel/sweep flows. Public
- * URLs exist only for the `public` bucket; documents get short-lived
+ * URLs exist only for the `image` bucket; documents get short-lived
  * presigned GET URLs instead.
  */
 @LogClass()
@@ -52,7 +52,7 @@ export class S3StorageAdapter {
 		private readonly _configService: ConfigService<TConfig>,
 	) {
 		this._buckets = {
-			public: this._configService.getOrThrow("S3_BUCKET"),
+			image: this._configService.getOrThrow("S3_IMAGE_BUCKET"),
 			documents: this._configService.getOrThrow("S3_DOCUMENTS_BUCKET"),
 		};
 		this._publicBaseUrl = this._configService
@@ -82,7 +82,7 @@ export class S3StorageAdapter {
 		contentType: string,
 		maxBytes: number,
 		ttlSeconds: number,
-		bucket: TS3Bucket = "public",
+		bucket: TS3Bucket = "image",
 	): Promise<TPresignedPost> {
 		return createPresignedPost(this._client, {
 			Bucket: this._buckets[bucket],
@@ -96,17 +96,17 @@ export class S3StorageAdapter {
 		});
 	}
 
-	/** Liveness probe for `AppService`; throws if the public bucket is unreachable. */
+	/** Liveness probe for `AppService`; throws if the image bucket is unreachable. */
 	public async ping(): Promise<void> {
 		await this._client.send(
-			new HeadBucketCommand({ Bucket: this._buckets.public }),
+			new HeadBucketCommand({ Bucket: this._buckets.image }),
 		);
 	}
 
 	/** `null` when the object does not exist. */
 	public async headObject(
 		key: string,
-		bucket: TS3Bucket = "public",
+		bucket: TS3Bucket = "image",
 	): Promise<THeadObjectResult | null> {
 		try {
 			const result = await this._client.send(
@@ -127,7 +127,7 @@ export class S3StorageAdapter {
 	/** Deletes every key, batched to S3's 1000-key limit per call. Best effort per batch. */
 	public async deleteObjects(
 		keys: string[],
-		bucket: TS3Bucket = "public",
+		bucket: TS3Bucket = "image",
 	): Promise<void> {
 		for (let i = 0; i < keys.length; i += _DELETE_BATCH_SIZE) {
 			const batch = keys.slice(i, i + _DELETE_BATCH_SIZE);
@@ -146,7 +146,7 @@ export class S3StorageAdapter {
 	/**
 	 * A presigned GET for a private document, valid for `ttlSeconds`. Signing
 	 * is local (no S3 round trip), so listing documents stays cheap. Always
-	 * the `documents` bucket: public objects use `publicUrl`.
+	 * the `documents` bucket: image objects use `publicUrl`.
 	 */
 	public async presignedGetUrl(
 		key: string,
@@ -159,7 +159,7 @@ export class S3StorageAdapter {
 		);
 	}
 
-	/** The public URL an object key in the `public` bucket resolves to. */
+	/** The public URL an object key in the `image` bucket resolves to. */
 	public publicUrl(key: string): string {
 		return `${this._publicBaseUrl}/${key}`;
 	}

@@ -13,13 +13,13 @@ const _DOCUMENTS_BASE_URL = "https://fake-documents.test";
  * mimic the browser's direct-to-S3 POST completing, then exercise
  * confirm/cancel/sweep against `headObject`/`deleteObjects` as the real
  * adapter would see them. Objects are stored per bucket, so a document
- * looked up in the `public` bucket (or vice versa) is not found.
+ * looked up in the `image` bucket (or vice versa) is not found.
  */
 export class FakeS3StorageAdapter {
 	/** Deleted keys from either bucket, in deletion order. */
 	public deletedKeys: string[] = [];
 	private _objects: Record<TS3Bucket, Map<string, TFakeObject>> = {
-		public: new Map(),
+		image: new Map(),
 		documents: new Map(),
 	};
 
@@ -28,7 +28,7 @@ export class FakeS3StorageAdapter {
 		contentType: string,
 		_maxBytes?: number,
 		_ttlSeconds?: number,
-		bucket: TS3Bucket = "public",
+		bucket: TS3Bucket = "image",
 	): Promise<{ url: string; fields: Record<string, string> }> {
 		const base =
 			bucket === "documents" ? _DOCUMENTS_BASE_URL : _PUBLIC_BASE_URL;
@@ -42,14 +42,14 @@ export class FakeS3StorageAdapter {
 
 	public async headObject(
 		key: string,
-		bucket: TS3Bucket = "public",
+		bucket: TS3Bucket = "image",
 	): Promise<TFakeObject | null> {
 		return this._objects[bucket].get(key) ?? null;
 	}
 
 	public async deleteObjects(
 		keys: string[],
-		bucket: TS3Bucket = "public",
+		bucket: TS3Bucket = "image",
 	): Promise<void> {
 		for (const key of keys) {
 			this._objects[bucket].delete(key);
@@ -82,13 +82,13 @@ export class FakeS3StorageAdapter {
 		key: string,
 		sizeBytes: number,
 		contentType: string,
-		bucket: TS3Bucket = "public",
+		bucket: TS3Bucket = "image",
 	): void {
 		this._objects[bucket].set(key, { sizeBytes, contentType });
 	}
 
 	public reset(): void {
-		this._objects.public.clear();
+		this._objects.image.clear();
 		this._objects.documents.clear();
 		this.deletedKeys = [];
 	}

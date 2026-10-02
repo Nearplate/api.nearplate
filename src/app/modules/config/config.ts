@@ -99,7 +99,14 @@ export const ResendConfigSchema = z.object({
  * credential chain (instance role, etc).
  */
 export const S3ConfigSchema = z.object({
-	S3_BUCKET: _str.min(1),
+	/** Public bucket for restaurant logos, banners and menu-item photos. */
+	S3_IMAGE_BUCKET: _str.min(1),
+	/**
+	 * Private bucket for restaurant KYC documents, on the same region, endpoint
+	 * and credentials as `S3_IMAGE_BUCKET`. Objects are only ever read through
+	 * short-lived presigned GET URLs; it must not allow public reads.
+	 */
+	S3_DOCUMENTS_BUCKET: _str.min(1),
 	S3_REGION: _str.min(1),
 	S3_PUBLIC_BASE_URL: _str.url(),
 	S3_ENDPOINT: _str.url().optional(),
@@ -109,12 +116,6 @@ export const S3ConfigSchema = z.object({
 		.default("false"),
 	S3_ACCESS_KEY_ID: _str.optional(),
 	S3_SECRET_ACCESS_KEY: _str.optional(),
-	/**
-	 * Private bucket for restaurant KYC documents, on the same region, endpoint
-	 * and credentials as `S3_BUCKET`. Objects are only ever read through
-	 * short-lived presigned GET URLs; it must not allow public reads.
-	 */
-	S3_DOCUMENTS_BUCKET: _str.min(1),
 });
 
 /** Presigned-upload lifetime and how long an unconfirmed upload is kept. */

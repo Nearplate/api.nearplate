@@ -183,7 +183,7 @@ describe("restaurant documents", () => {
 			const { http, s3 } = getE2eApp();
 			const { restaurant, auth } = await ownerWithRestaurant();
 			const post = await presign(auth, restaurant.id);
-			s3.simulateUpload(post.fields.key, 2048, "application/pdf", "public");
+			s3.simulateUpload(post.fields.key, 2048, "application/pdf", "image");
 			await http
 				.post(
 					`/v1/restaurants/${restaurant.id}/documents/aadhaar_front/confirm`,
