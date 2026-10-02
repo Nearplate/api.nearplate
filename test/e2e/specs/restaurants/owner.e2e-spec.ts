@@ -252,8 +252,8 @@ describe("owner restaurants", () => {
 			},
 		);
 
-		it("scopes mine to the caller while the public slug lookup works for anyone", async () => {
-			const { http } = getE2eApp();
+		it("scopes mine to the caller while the public slug lookup shows only approved restaurants", async () => {
+			const { http, app } = getE2eApp();
 			const a = await owner();
 			const b = await owner();
 			const r = await create(a.auth);
@@ -267,6 +267,10 @@ describe("owner restaurants", () => {
 				.set("Authorization", b.auth)
 				.expect(200);
 			expect(mineB.body).toEqual({ items: [], total: 0 });
+			await http.get(`/v1/restaurants/${r.slug}`).expect(404);
+			await app.get(RestaurantRepository).update(a.user.id, r.id, {
+				verificationStatus: RestaurantVerificationStatus.Approved,
+			});
 			await http.get(`/v1/restaurants/${r.slug}`).expect(200);
 		});
 
