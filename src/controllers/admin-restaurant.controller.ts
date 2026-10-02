@@ -4,6 +4,7 @@ import { AuthRole } from "@/domain/enums/auth-role";
 import { RestaurantReviewService } from "@/services/restaurant-review.service";
 import {
 	AdminRestaurantTransformer,
+	type TAdminRestaurantDetailResponse,
 	type TAdminRestaurantListResponse,
 } from "@/transformers/admin-restaurant.transformer";
 import type { TAdminRestaurantResponse } from "@/transformers/restaurant.dto";
@@ -44,12 +45,17 @@ export class AdminRestaurantController {
 		return this._adminRestaurantTransformer.toListResponseDTO(page);
 	}
 
-	/** One restaurant in any verification state. */
+	/**
+	 * One restaurant in any verification state, with its full KYC details and
+	 * documents (short-lived download URLs) for review.
+	 */
 	@Roles(AuthRole.Admin)
 	@Get(":id")
-	public async get(@Param("id") id: string): Promise<TAdminRestaurantResponse> {
-		const restaurant = await this._restaurantReviewService.get(id);
-		return this._adminRestaurantTransformer.toResponseDTO(restaurant);
+	public async get(
+		@Param("id") id: string,
+	): Promise<TAdminRestaurantDetailResponse> {
+		const detail = await this._restaurantReviewService.getDetail(id);
+		return this._adminRestaurantTransformer.toGetResponseDTO(detail);
 	}
 
 	/** Approves a pending restaurant. */

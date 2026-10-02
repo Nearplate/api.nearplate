@@ -114,6 +114,8 @@ describe("admin restaurant review", () => {
 			expect(res.body).toMatchObject({
 				id: restaurant.id,
 				verificationStatus: "draft",
+				kyc: null,
+				documents: [],
 			});
 
 			await http
@@ -124,6 +126,58 @@ describe("admin restaurant review", () => {
 				.get("/v1/admin/restaurants/not-a-uuid")
 				.set("Authorization", auth)
 				.expect(404);
+		});
+
+		it("includes full KYC and document download URLs while owners see masks", async () => {
+			const { http, seedOnboarding } = getE2eApp();
+			const { user, restaurant, auth: ownerAuth } = await ownerWithRestaurant();
+			await seedOnboarding(user.id, restaurant.id);
+
+			const res = await http
+				.get(`/v1/admin/restaurants/${restaurant.id}`)
+				.set("Authorization", await admin())
+				.expect(200);
+
+			expect(res.body.kyc).toEqual({
+				panNumber: "ABCDE1234F",
+				fssaiNumber: "12345678901234",
+				accountHolderName: "Asha Rao",
+				accountNumber: "123456789012",
+				ifscCode: "HDFC0001234",
+				bankName: "HDFC Bank",
+				updatedAt: expect.any(String),
+			});
+			expect(res.body.documents).toHaveLength(6);
+			for (const document of res.body.documents) {
+				expect(document).toMatchObject({
+					status: "uploaded",
+					url: expect.stringContaining("X-Amz-Signature"),
+				});
+				expect(document).not.toHaveProperty("objectKey");
+			}
+
+			const owner = await http
+				.get(`/v1/restaurants/${restaurant.id}/kyc`)
+				.set("Authorization", ownerAuth)
+				.expect(200);
+			expect(owner.body).toMatchObject({
+				panNumber: "XXXXX1234F",
+				accountNumber: "XXXXXXXX9012",
+			});
+		});
+
+		it("keeps the list endpoint free of KYC data", async () => {
+			const { http, seedOnboarding } = getE2eApp();
+			const { user, restaurant } = await ownerWithRestaurant();
+			await seedOnboarding(user.id, restaurant.id);
+
+			const res = await http
+				.get("/v1/admin/restaurants")
+				.set("Authorization", await admin())
+				.expect(200);
+
+			expect(res.body.items[0]).not.toHaveProperty("kyc");
+			expect(res.body.items[0]).not.toHaveProperty("documents");
 		});
 	});
 

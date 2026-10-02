@@ -2,8 +2,10 @@ import { ErrorMessages } from "@/app/constants/errors";
 import { LogClass } from "@/app/modules/logger";
 import { RestaurantVerificationStatus } from "@/domain/enums/restaurant-verification-status";
 import type { TPage } from "@/domain/types/page.types";
+import type { TRestaurantReviewDetail } from "@/domain/types/restaurant-review.types";
 import type { TListRestaurantsForReviewInput } from "@/domain/types/restaurant.types";
 import { RestaurantRepository } from "@/repositories/restaurant.repository";
+import { RestaurantOnboardingService } from "@/services/restaurant-onboarding.service";
 import type { TRestaurant } from "@db/schemas/restaurant.schema";
 import {
 	ConflictException,
@@ -22,6 +24,8 @@ export class RestaurantReviewService {
 	constructor(
 		@Inject(RestaurantRepository)
 		private readonly _restaurantRepository: RestaurantRepository,
+		@Inject(RestaurantOnboardingService)
+		private readonly _restaurantOnboardingService: RestaurantOnboardingService,
 	) {}
 
 	/** One page of the review queue for a verification state. */
@@ -38,6 +42,20 @@ export class RestaurantReviewService {
 			throw new NotFoundException();
 		}
 		return restaurant;
+	}
+
+	/**
+	 * Any restaurant by id with its onboarding data for review: full KYC
+	 * details and every document with a short-lived download URL. 404 if
+	 * unknown.
+	 */
+	public async getDetail(id: string): Promise<TRestaurantReviewDetail> {
+		const restaurant = await this.get(id);
+		const onboarding =
+			await this._restaurantOnboardingService.getOnboardingForReview(
+				restaurant.id,
+			);
+		return { restaurant, ...onboarding };
 	}
 
 	/** Approves a pending restaurant, making it visible to customers. */

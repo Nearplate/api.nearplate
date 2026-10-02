@@ -3,7 +3,14 @@ import {
 	RestaurantVerificationStatus,
 } from "@/domain/enums/restaurant-verification-status";
 import type { TPage } from "@/domain/types/page.types";
+import type { TRestaurantReviewDetail } from "@/domain/types/restaurant-review.types";
 import type { TListRestaurantsForReviewInput } from "@/domain/types/restaurant.types";
+import {
+	toAdminKycResponse,
+	toRestaurantDocumentResponse,
+	type TKycResponse,
+	type TRestaurantDocumentResponse,
+} from "@/transformers/restaurant-onboarding.dto";
 import {
 	toAdminRestaurantResponse,
 	type TAdminRestaurantResponse,
@@ -34,6 +41,15 @@ export type TAdminRestaurantListResponse = {
 	total: number;
 };
 
+/**
+ * Review detail: the admin restaurant shape plus full (unmasked) KYC and
+ * every document with a short-lived download URL.
+ */
+export type TAdminRestaurantDetailResponse = TAdminRestaurantResponse & {
+	kyc: TKycResponse | null;
+	documents: TRestaurantDocumentResponse[];
+};
+
 /** Validates admin restaurant-review input and maps rows to the admin wire DTO. */
 @Injectable()
 export class AdminRestaurantTransformer {
@@ -59,6 +75,17 @@ export class AdminRestaurantTransformer {
 		return {
 			items: page.items.map(toAdminRestaurantResponse),
 			total: page.total,
+		};
+	}
+
+	/** Review detail → wire DTO with full KYC and document download URLs. */
+	public toGetResponseDTO(
+		detail: TRestaurantReviewDetail,
+	): TAdminRestaurantDetailResponse {
+		return {
+			...toAdminRestaurantResponse(detail.restaurant),
+			kyc: detail.kyc ? toAdminKycResponse(detail.kyc) : null,
+			documents: detail.documents.map(toRestaurantDocumentResponse),
 		};
 	}
 

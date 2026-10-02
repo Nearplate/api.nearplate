@@ -19,6 +19,7 @@ import type {
 	TKycDetails,
 	TUpdateKycInput,
 } from "@/domain/types/restaurant-kyc.types";
+import type { TOnboardingReviewData } from "@/domain/types/restaurant-review.types";
 import { BackgroundJobHelper } from "@/helpers/background-job.helper";
 import { EncryptionHelper } from "@/helpers/encryption.helper";
 import { RestaurantDocumentRepository } from "@/repositories/restaurant-document.repository";
@@ -131,6 +132,24 @@ export class RestaurantOnboardingService {
 			...RESTAURANT_DOCUMENT_TYPES.filter((type) => !uploaded.has(type)),
 			..._REQUIRED_KYC_FIELDS.filter((field) => !saved[field]),
 		];
+	}
+
+	/**
+	 * Onboarding data for admin review, regardless of owner: decrypted KYC
+	 * (null before the first save) and every document. Callers must already
+	 * have authorised access to `restaurantId`.
+	 */
+	public async getOnboardingForReview(
+		restaurantId: string,
+	): Promise<TOnboardingReviewData> {
+		const [kyc, documents] = await Promise.all([
+			this._restaurantKycRepository.findByRestaurantIdAny(restaurantId),
+			this._restaurantDocumentRepository.listForRestaurantAny(restaurantId),
+		]);
+		return {
+			kyc: kyc ? this._decryptKyc(kyc) : null,
+			documents: await Promise.all(documents.map((row) => this._toView(row))),
+		};
 	}
 
 	/** The caller's decrypted KYC details (all null before the first save). */
