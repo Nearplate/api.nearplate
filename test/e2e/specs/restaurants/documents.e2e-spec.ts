@@ -45,9 +45,14 @@ describe("restaurant documents", () => {
 	}
 
 	async function upload(auth: string, id: string, body = PDF_BODY) {
-		const { http, documents } = getE2eApp();
+		const { http, s3 } = getE2eApp();
 		const post = await presign(auth, id, body);
-		documents.simulateUpload(post.fields.key, body.size, body.contentType);
+		s3.simulateUpload(
+			post.fields.key,
+			body.size,
+			body.contentType,
+			"documents",
+		);
 		await http
 			.post(`/v1/restaurants/${id}/documents/${body.type}/confirm`)
 			.set("Authorization", auth)
@@ -111,7 +116,7 @@ describe("restaurant documents", () => {
 		});
 
 		it("deletes the old object when a re-upload changes the key", async () => {
-			const { documents } = getE2eApp();
+			const { s3 } = getE2eApp();
 			const { restaurant, auth } = await ownerWithRestaurant();
 			const pdfKey = await upload(auth, restaurant.id);
 			const png = await presign(auth, restaurant.id, {
@@ -120,16 +125,16 @@ describe("restaurant documents", () => {
 				size: 1024,
 			});
 			expect(png.fields.key).not.toBe(pdfKey);
-			await documents.waitForDelete(pdfKey);
+			await s3.waitForDelete(pdfKey);
 		});
 	});
 
 	describe("confirm", () => {
 		it("marks the document uploaded with a presigned download URL", async () => {
-			const { http, documents } = getE2eApp();
+			const { http, s3 } = getE2eApp();
 			const { restaurant, auth } = await ownerWithRestaurant();
 			const post = await presign(auth, restaurant.id);
-			documents.simulateUpload(post.fields.key, 1500, "application/pdf");
+			s3.simulateUpload(post.fields.key, 1500, "application/pdf", "documents");
 			const res = await http
 				.post(
 					`/v1/restaurants/${restaurant.id}/documents/aadhaar_front/confirm`,
@@ -154,14 +159,15 @@ describe("restaurant documents", () => {
 				{ size: MAX_BYTES + 1, contentType: "application/pdf" },
 			],
 		])("returns 409 when %s", async (_label, object) => {
-			const { http, documents } = getE2eApp();
+			const { http, s3 } = getE2eApp();
 			const { restaurant, auth } = await ownerWithRestaurant();
 			const post = await presign(auth, restaurant.id);
 			if (object) {
-				documents.simulateUpload(
+				s3.simulateUpload(
 					post.fields.key,
 					object.size,
 					object.contentType,
+					"documents",
 				);
 			}
 			const res = await http
@@ -171,6 +177,19 @@ describe("restaurant documents", () => {
 				.set("Authorization", auth)
 				.expect(409);
 			expect(res.body.code).toBe("RESTAURANT_DOCUMENT_UPLOAD_MISMATCH");
+		});
+
+		it("only accepts an object in the private documents bucket", async () => {
+			const { http, s3 } = getE2eApp();
+			const { restaurant, auth } = await ownerWithRestaurant();
+			const post = await presign(auth, restaurant.id);
+			s3.simulateUpload(post.fields.key, 2048, "application/pdf", "public");
+			await http
+				.post(
+					`/v1/restaurants/${restaurant.id}/documents/aadhaar_front/confirm`,
+				)
+				.set("Authorization", auth)
+				.expect(409);
 		});
 
 		it("returns 404 without a presign and for an unknown type", async () => {
@@ -234,14 +253,14 @@ describe("restaurant documents", () => {
 
 	describe("delete", () => {
 		it("removes the row and the S3 object", async () => {
-			const { http, documents } = getE2eApp();
+			const { http, s3 } = getE2eApp();
 			const { restaurant, auth } = await ownerWithRestaurant();
 			const key = await upload(auth, restaurant.id);
 			await http
 				.delete(`/v1/restaurants/${restaurant.id}/documents/aadhaar_front`)
 				.set("Authorization", auth)
 				.expect(204);
-			expect(documents.deletedKeys).toContain(key);
+			expect(s3.deletedKeys).toContain(key);
 			const list = await http
 				.get(`/v1/restaurants/${restaurant.id}/documents`)
 				.set("Authorization", auth)
@@ -256,7 +275,7 @@ describe("restaurant documents", () => {
 
 	describe("sweep", () => {
 		it("deletes expired pending uploads and keeps confirmed ones", async () => {
-			const { app, http, documents } = getE2eApp();
+			const { app, http, s3 } = getE2eApp();
 			const { restaurant, auth } = await ownerWithRestaurant();
 			const confirmedKey = await upload(auth, restaurant.id);
 			const pending = await presign(auth, restaurant.id, {
@@ -271,8 +290,8 @@ describe("restaurant documents", () => {
 
 			await app.get(UploadCleanupSubscriber).sweepExpiredDocumentUploads();
 
-			expect(documents.deletedKeys).toEqual([pending.fields.key]);
-			expect(documents.deletedKeys).not.toContain(confirmedKey);
+			expect(s3.deletedKeys).toEqual([pending.fields.key]);
+			expect(s3.deletedKeys).not.toContain(confirmedKey);
 			const list = await http
 				.get(`/v1/restaurants/${restaurant.id}/documents`)
 				.set("Authorization", auth)
@@ -286,13 +305,13 @@ describe("restaurant documents", () => {
 		});
 
 		it("leaves unexpired pending uploads alone", async () => {
-			const { app, documents } = getE2eApp();
+			const { app, s3 } = getE2eApp();
 			const { restaurant, auth } = await ownerWithRestaurant();
 			await presign(auth, restaurant.id);
 
 			await app.get(UploadCleanupSubscriber).sweepExpiredDocumentUploads();
 
-			expect(documents.deletedKeys).toEqual([]);
+			expect(s3.deletedKeys).toEqual([]);
 		});
 	});
 
@@ -301,10 +320,10 @@ describe("restaurant documents", () => {
 			RestaurantVerificationStatus.PendingReview,
 			RestaurantVerificationStatus.Approved,
 		])("returns 409 for every write while %s", async (status) => {
-			const { http, documents } = getE2eApp();
+			const { http, s3 } = getE2eApp();
 			const { user, restaurant, auth } = await ownerWithRestaurant();
 			const post = await presign(auth, restaurant.id);
-			documents.simulateUpload(post.fields.key, 2048, "application/pdf");
+			s3.simulateUpload(post.fields.key, 2048, "application/pdf", "documents");
 			await setVerification(user.id, restaurant.id, status);
 
 			// Built lazily: a supertest request starts its server when created.

@@ -97,14 +97,14 @@ describe("POST /v1/restaurants/:id/submit", () => {
 				ifscCode: "HDFC0001234",
 			})
 			.expect(200);
-		const { documents } = getE2eApp();
+		const { s3 } = getE2eApp();
 		for (const type of ["aadhaar_front", "aadhaar_back"]) {
 			const post = await http
 				.post(`/v1/restaurants/${r.id}/documents`)
 				.set("Authorization", auth)
 				.send({ type, contentType: "image/png", size: 1024 })
 				.expect(201);
-			documents.simulateUpload(post.body.fields.key, 1024, "image/png");
+			s3.simulateUpload(post.body.fields.key, 1024, "image/png", "documents");
 			await http
 				.post(`/v1/restaurants/${r.id}/documents/${type}/confirm`)
 				.set("Authorization", auth)

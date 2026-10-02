@@ -1,19 +1,27 @@
-import { createS3Client } from "@/adapters/s3-client";
 import type { TConfig } from "@/app/modules/config";
 import { LogClass } from "@/app/modules/logger";
 import {
 	DeleteObjectsCommand,
+	GetObjectCommand,
 	HeadBucketCommand,
 	HeadObjectCommand,
 	NotFound,
 	S3Client,
 } from "@aws-sdk/client-s3";
 import { createPresignedPost } from "@aws-sdk/s3-presigned-post";
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { Inject, Injectable } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 
 /** `S3.deleteObjects` accepts at most 1000 keys per call. */
 const _DELETE_BATCH_SIZE = 1000;
+
+/**
+ * Which bucket an operation targets: `public` holds logos, banners and menu
+ * photos (`S3_BUCKET`); `documents` holds private KYC documents
+ * (`S3_DOCUMENTS_BUCKET`), which are only ever read via presigned GETs.
+ */
+export type TS3Bucket = "public" | "documents";
 
 export type TPresignedPost = {
 	url: string;
@@ -26,27 +34,42 @@ export type THeadObjectResult = {
 };
 
 /**
- * Thin wrapper over the S3 SDK for a single public bucket. Presigned POSTs
- * let the browser upload bytes straight to S3 (never through this API);
- * `headObject`/`deleteObjects` back the confirm/cancel/sweep flows in
- * `RestaurantService`.
+ * Thin wrapper over the S3 SDK for both buckets, sharing one client. Presigned
+ * POSTs let the browser upload bytes straight to S3 (never through this API);
+ * `headObject`/`deleteObjects` back the confirm/cancel/sweep flows. Public
+ * URLs exist only for the `public` bucket; documents get short-lived
+ * presigned GET URLs instead.
  */
 @LogClass()
 @Injectable()
 export class S3StorageAdapter {
 	private readonly _client: S3Client;
-	private readonly _bucket: string;
+	private readonly _buckets: Record<TS3Bucket, string>;
 	private readonly _publicBaseUrl: string;
 
 	constructor(
 		@Inject(ConfigService)
 		private readonly _configService: ConfigService<TConfig>,
 	) {
-		this._bucket = this._configService.getOrThrow("S3_BUCKET");
+		this._buckets = {
+			public: this._configService.getOrThrow("S3_BUCKET"),
+			documents: this._configService.getOrThrow("S3_DOCUMENTS_BUCKET"),
+		};
 		this._publicBaseUrl = this._configService
 			.getOrThrow<string>("S3_PUBLIC_BASE_URL")
 			.replace(/\/+$/, "");
-		this._client = createS3Client(this._configService);
+		const accessKeyId = this._configService.get("S3_ACCESS_KEY_ID");
+		const secretAccessKey = this._configService.get("S3_SECRET_ACCESS_KEY");
+		this._client = new S3Client({
+			region: this._configService.getOrThrow("S3_REGION"),
+			endpoint: this._configService.get("S3_ENDPOINT"),
+			forcePathStyle: this._configService.get("S3_FORCE_PATH_STYLE"),
+			// Unset falls back to the SDK's default credential chain.
+			credentials:
+				accessKeyId && secretAccessKey
+					? { accessKeyId, secretAccessKey }
+					: undefined,
+		});
 	}
 
 	/**
@@ -59,9 +82,10 @@ export class S3StorageAdapter {
 		contentType: string,
 		maxBytes: number,
 		ttlSeconds: number,
+		bucket: TS3Bucket = "public",
 	): Promise<TPresignedPost> {
 		return createPresignedPost(this._client, {
-			Bucket: this._bucket,
+			Bucket: this._buckets[bucket],
 			Key: key,
 			Conditions: [
 				["content-length-range", 1, maxBytes],
@@ -72,16 +96,21 @@ export class S3StorageAdapter {
 		});
 	}
 
-	/** Liveness probe for `AppService`; throws if the bucket is unreachable. */
+	/** Liveness probe for `AppService`; throws if the public bucket is unreachable. */
 	public async ping(): Promise<void> {
-		await this._client.send(new HeadBucketCommand({ Bucket: this._bucket }));
+		await this._client.send(
+			new HeadBucketCommand({ Bucket: this._buckets.public }),
+		);
 	}
 
 	/** `null` when the object does not exist. */
-	public async headObject(key: string): Promise<THeadObjectResult | null> {
+	public async headObject(
+		key: string,
+		bucket: TS3Bucket = "public",
+	): Promise<THeadObjectResult | null> {
 		try {
 			const result = await this._client.send(
-				new HeadObjectCommand({ Bucket: this._bucket, Key: key }),
+				new HeadObjectCommand({ Bucket: this._buckets[bucket], Key: key }),
 			);
 			return {
 				sizeBytes: result.ContentLength ?? 0,
@@ -96,7 +125,10 @@ export class S3StorageAdapter {
 	}
 
 	/** Deletes every key, batched to S3's 1000-key limit per call. Best effort per batch. */
-	public async deleteObjects(keys: string[]): Promise<void> {
+	public async deleteObjects(
+		keys: string[],
+		bucket: TS3Bucket = "public",
+	): Promise<void> {
 		for (let i = 0; i < keys.length; i += _DELETE_BATCH_SIZE) {
 			const batch = keys.slice(i, i + _DELETE_BATCH_SIZE);
 			if (batch.length === 0) {
@@ -104,14 +136,30 @@ export class S3StorageAdapter {
 			}
 			await this._client.send(
 				new DeleteObjectsCommand({
-					Bucket: this._bucket,
+					Bucket: this._buckets[bucket],
 					Delete: { Objects: batch.map((Key) => ({ Key })) },
 				}),
 			);
 		}
 	}
 
-	/** The public URL an object key resolves to. */
+	/**
+	 * A presigned GET for a private document, valid for `ttlSeconds`. Signing
+	 * is local (no S3 round trip), so listing documents stays cheap. Always
+	 * the `documents` bucket: public objects use `publicUrl`.
+	 */
+	public async presignedGetUrl(
+		key: string,
+		ttlSeconds: number,
+	): Promise<string> {
+		return getSignedUrl(
+			this._client,
+			new GetObjectCommand({ Bucket: this._buckets.documents, Key: key }),
+			{ expiresIn: ttlSeconds },
+		);
+	}
+
+	/** The public URL an object key in the `public` bucket resolves to. */
 	public publicUrl(key: string): string {
 		return `${this._publicBaseUrl}/${key}`;
 	}

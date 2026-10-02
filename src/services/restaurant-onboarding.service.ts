@@ -1,4 +1,7 @@
-import { S3DocumentStorageAdapter } from "@/adapters/s3-document-storage.adapter";
+import {
+	S3StorageAdapter,
+	type TS3Bucket,
+} from "@/adapters/s3-storage.adapter";
 import { ErrorMessages } from "@/app/constants/errors";
 import type { TConfig } from "@/app/modules/config/config";
 import { LogClass } from "@/app/modules/logger";
@@ -49,6 +52,9 @@ const _EDITABLE_STATUSES: readonly RestaurantVerificationStatus[] = [
 	RestaurantVerificationStatus.Rejected,
 ];
 
+/** KYC documents live in the private bucket; never the public one. */
+const _DOCUMENTS_BUCKET: TS3Bucket = "documents";
+
 /** Batch size for one sweep run; keeps a single cron tick bounded. */
 const _SWEEP_BATCH_SIZE = 200;
 
@@ -87,8 +93,8 @@ export class RestaurantOnboardingService {
 		private readonly _restaurantRepository: RestaurantRepository,
 		@Inject(RestaurantDocumentRepository)
 		private readonly _restaurantDocumentRepository: RestaurantDocumentRepository,
-		@Inject(S3DocumentStorageAdapter)
-		private readonly _s3DocumentStorageAdapter: S3DocumentStorageAdapter,
+		@Inject(S3StorageAdapter)
+		private readonly _s3StorageAdapter: S3StorageAdapter,
 		@Inject(BackgroundJobHelper)
 		private readonly _backgroundJobHelper: BackgroundJobHelper,
 		@Inject(ConfigService)
@@ -234,11 +240,12 @@ export class RestaurantOnboardingService {
 				size: input.size,
 				expiresAt,
 			}),
-			this._s3DocumentStorageAdapter.createPresignedPost(
+			this._s3StorageAdapter.createPresignedPost(
 				objectKey,
 				input.contentType,
 				MAX_DOCUMENT_BYTES,
 				ttlSeconds,
+				_DOCUMENTS_BUCKET,
 			),
 		]);
 		if (!row) {
@@ -277,7 +284,10 @@ export class RestaurantOnboardingService {
 		if (row.status === RestaurantDocumentStatus.Uploaded) {
 			return this._toView(row);
 		}
-		const head = await this._s3DocumentStorageAdapter.headObject(row.objectKey);
+		const head = await this._s3StorageAdapter.headObject(
+			row.objectKey,
+			_DOCUMENTS_BUCKET,
+		);
 		if (
 			!head ||
 			head.contentType !== row.contentType ||
@@ -332,7 +342,10 @@ export class RestaurantOnboardingService {
 		if (!deleted) {
 			throw new NotFoundException();
 		}
-		await this._s3DocumentStorageAdapter.deleteObjects([deleted.objectKey]);
+		await this._s3StorageAdapter.deleteObjects(
+			[deleted.objectKey],
+			_DOCUMENTS_BUCKET,
+		);
 	}
 
 	/**
@@ -349,8 +362,9 @@ export class RestaurantOnboardingService {
 		if (expired.length === 0) {
 			return;
 		}
-		await this._s3DocumentStorageAdapter.deleteObjects(
+		await this._s3StorageAdapter.deleteObjects(
 			expired.map((document) => document.objectKey),
+			_DOCUMENTS_BUCKET,
 		);
 		await this._restaurantDocumentRepository.deletePendingByIds(
 			expired.map((document) => document.id),
@@ -407,7 +421,7 @@ export class RestaurantOnboardingService {
 		if (row.status !== RestaurantDocumentStatus.Uploaded) {
 			return { ...row, url: null };
 		}
-		const url = await this._s3DocumentStorageAdapter.presignedGetUrl(
+		const url = await this._s3StorageAdapter.presignedGetUrl(
 			row.objectKey,
 			this._configService.getOrThrow<number>("DOCUMENT_URL_TTL_SECONDS"),
 		);
@@ -439,7 +453,8 @@ export class RestaurantOnboardingService {
 	/** Deletes a replaced document object after the response is sent. */
 	private _deleteInBackground(objectKey: string): void {
 		this._backgroundJobHelper.run(
-			() => this._s3DocumentStorageAdapter.deleteObjects([objectKey]),
+			() =>
+				this._s3StorageAdapter.deleteObjects([objectKey], _DOCUMENTS_BUCKET),
 			{ name: `delete-document:${objectKey}` },
 		);
 	}

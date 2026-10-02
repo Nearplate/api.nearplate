@@ -36,7 +36,7 @@ test/e2e/
 - Test Redis is published on host port **6380** so it never touches a developer's own Redis on 6379.
 - Force `NODE_ENV=development` (schema has no `test` value).
 - Email and Google are always faked: `FakeResendAdapter` captures links (`waitForLink`, `tokenOf`), `FakeGoogleOauthAdapter` maps test `code` strings to claims (`register`) and drives the redirect flow's `authorizeUrl`/`exchangeCode`. Never call the real vendors.
-- Use `seedUser({ role, email, firstName, lastName })` for an existing account with a valid access token, and `seedRestaurant(ownerId, overrides?)` / `seedMenuItem(ownerId, restaurantId, overrides?)` / `seedOnboarding(ownerId, restaurantId)` (complete KYC + documents, so submit passes) for domain data. S3 is faked twice: `s3` (public images) and `documents` (private KYC bucket). `reset()` also clears the `ratelimit:*` keys and the fakes.
+- Use `seedUser({ role, email, firstName, lastName })` for an existing account with a valid access token, and `seedRestaurant(ownerId, overrides?)` / `seedMenuItem(ownerId, restaurantId, overrides?)` / `seedOnboarding(ownerId, restaurantId)` (complete KYC + documents, so submit passes) for domain data. S3 is one fake (`s3`) with per-bucket storage; pass `"documents"` to `simulateUpload` for KYC documents. `reset()` also clears the `ratelimit:*` keys and the fakes.
 - The harness applies `configureApp` (so routes are under `/v1`); `global-setup.cjs` runs `db/migrations` before the first test, so every table, index, and constraint already exists.
 - `MAGIC_LINK_MAX_PER_EMAIL_PER_HOUR=3` in tests so the 429 path is cheap to hit.
 - Wire JSON is camelCase. Error bodies are `{ statusCode }`, plus `code` and `message` when thrown from the `Errors` catalogue.
