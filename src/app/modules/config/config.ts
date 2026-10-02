@@ -99,7 +99,14 @@ export const ResendConfigSchema = z.object({
  * credential chain (instance role, etc).
  */
 export const S3ConfigSchema = z.object({
-	S3_BUCKET: _str.min(1),
+	/** Public bucket for restaurant logos, banners and menu-item photos. */
+	S3_IMAGE_BUCKET: _str.min(1),
+	/**
+	 * Private bucket for restaurant KYC documents, on the same region, endpoint
+	 * and credentials as `S3_IMAGE_BUCKET`. Objects are only ever read through
+	 * short-lived presigned GET URLs; it must not allow public reads.
+	 */
+	S3_DOCUMENTS_BUCKET: _str.min(1),
 	S3_REGION: _str.min(1),
 	S3_PUBLIC_BASE_URL: _str.url(),
 	S3_ENDPOINT: _str.url().optional(),
@@ -115,6 +122,26 @@ export const S3ConfigSchema = z.object({
 export const UploadConfigSchema = z.object({
 	UPLOAD_URL_TTL_SECONDS: _seconds.default(600), // 10 minutes
 	UPLOAD_PENDING_TTL_SECONDS: _seconds.default(3600), // 1 hour
+	/** Lifetime of a presigned GET URL for a private KYC document. */
+	DOCUMENT_URL_TTL_SECONDS: _seconds.default(300), // 5 minutes
+});
+
+/** Bytes in an AES-256 key. */
+const _AES_256_KEY_BYTES = 32;
+
+/**
+ * Key for `EncryptionHelper` (AES-256-GCM), which encrypts KYC bank account
+ * and PAN numbers at rest. Required at boot: 32 random bytes, base64-encoded.
+ * Rotating it makes existing ciphertext unreadable, so never change it
+ * without re-encrypting.
+ */
+export const KycConfigSchema = z.object({
+	KYC_ENCRYPTION_KEY: _str.refine(
+		(value) =>
+			/^[A-Za-z0-9+/]+={0,2}$/.test(value) &&
+			Buffer.from(value, "base64").length === _AES_256_KEY_BYTES,
+		{ message: "KYC_ENCRYPTION_KEY must be 32 bytes, base64-encoded" },
+	),
 });
 
 export const ConfigSchema = NodeConfigSchema.merge(LogConfigSchema)
@@ -129,6 +156,7 @@ export const ConfigSchema = NodeConfigSchema.merge(LogConfigSchema)
 	.merge(ResendConfigSchema)
 	.merge(S3ConfigSchema)
 	.merge(UploadConfigSchema)
+	.merge(KycConfigSchema)
 	.superRefine((config, ctx) => {
 		if (config.NODE_ENV === "production" && !config.RESEND_API_KEY) {
 			ctx.addIssue({

@@ -1,4 +1,4 @@
-import { AdminRestaurantTransformer } from "@/transformers/admin-restaurant.transformer";
+import { AdminTransformer } from "@/transformers/admin.transformer";
 import { AddressTransformer } from "@/transformers/address.transformer";
 import { AuthTransformer } from "@/transformers/auth.transformer";
 import { CartTransformer } from "@/transformers/cart.transformer";
@@ -14,5 +14,5 @@ export const Transformers: Provider[] = [
 	RestaurantTransformer,
 	OrderTransformer,
 	CartTransformer,
-	AdminRestaurantTransformer,
+	AdminTransformer,
 ];

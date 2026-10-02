@@ -1,5 +1,5 @@
 import { AddressController } from "@/controllers/address.controller";
-import { AdminRestaurantController } from "@/controllers/admin-restaurant.controller";
+import { AdminController } from "@/controllers/admin.controller";
 import { AppController } from "@/controllers/app.controller";
 import { AuthController } from "@/controllers/auth.controller";
 import { CartController } from "@/controllers/cart.controller";
@@ -15,5 +15,5 @@ export const Controllers = [
 	RestaurantController,
 	OrderController,
 	CartController,
-	AdminRestaurantController,
+	AdminController,
 ];

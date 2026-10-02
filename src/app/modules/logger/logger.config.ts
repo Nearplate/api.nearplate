@@ -81,7 +81,6 @@ export function buildWinstonOptions({
 		withContext(),
 		withSeverity(),
 		flattenStack(),
-		scrub(),
 	];
 
 	const nestLikeFormat = format.combine(
@@ -118,6 +117,13 @@ export function buildWinstonOptions({
 		levels: LOG_LEVELS,
 		level,
 		defaultMeta: { service: serviceName, appName, env },
+		// Scrubbing runs once at the logger level, before any transport, so a
+		// transport added later can never receive an unscrubbed entry.
+		format: format.combine(
+			format.errors({ stack: true }),
+			flattenStack(),
+			scrub(),
+		),
 		transports: transportsList,
 	};
 }

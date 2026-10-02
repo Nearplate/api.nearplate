@@ -3,7 +3,8 @@ import { AppService } from "@/services/app.service";
 import { AuthService } from "@/services/auth.service";
 import { CartService } from "@/services/cart.service";
 import { OrderService } from "@/services/order.service";
-import { RestaurantReviewService } from "@/services/restaurant-review.service";
+import { RestaurantOnboardingService } from "@/services/restaurant-onboarding.service";
+import { AdminService } from "@/services/admin.service";
 import { RestaurantService } from "@/services/restaurant.service";
 import { SessionService } from "@/services/session.service";
 import { UserService } from "@/services/user.service";
@@ -18,5 +19,6 @@ export const Services: Provider[] = [
 	OrderService,
 	RestaurantService,
 	CartService,
-	RestaurantReviewService,
+	AdminService,
+	RestaurantOnboardingService,
 ];

@@ -3,7 +3,14 @@ import {
 	RestaurantVerificationStatus,
 } from "@/domain/enums/restaurant-verification-status";
 import type { TPage } from "@/domain/types/page.types";
+import type { TRestaurantReviewDetail } from "@/domain/types/admin.types";
 import type { TListRestaurantsForReviewInput } from "@/domain/types/restaurant.types";
+import {
+	toAdminKycResponse,
+	toRestaurantDocumentResponse,
+	type TKycResponse,
+	type TRestaurantDocumentResponse,
+} from "@/transformers/restaurant.dto";
 import {
 	toAdminRestaurantResponse,
 	type TAdminRestaurantResponse,
@@ -34,11 +41,22 @@ export type TAdminRestaurantListResponse = {
 	total: number;
 };
 
+/**
+ * Review detail: the admin restaurant shape plus full (unmasked) KYC and
+ * every document with a short-lived download URL.
+ */
+export type TAdminRestaurantDetailResponse = TAdminRestaurantResponse & {
+	kyc: TKycResponse | null;
+	documents: TRestaurantDocumentResponse[];
+};
+
 /** Validates admin restaurant-review input and maps rows to the admin wire DTO. */
 @Injectable()
-export class AdminRestaurantTransformer {
+export class AdminTransformer {
 	/** Query → review queue filter; defaults to `pending_review`. */
-	public toListRequestDTO(query: unknown): TListRestaurantsForReviewInput {
+	public toListRestaurantsRequestDTO(
+		query: unknown,
+	): TListRestaurantsForReviewInput {
 		const data = parseOrBadRequest(_listSchema, query);
 		return {
 			verificationStatus: data.status,
@@ -48,12 +66,12 @@ export class AdminRestaurantTransformer {
 	}
 
 	/** Body → rejection reason; a blank or missing reason is 400. */
-	public toRejectRequestDTO(body: unknown): { reason: string } {
+	public toRejectRestaurantRequestDTO(body: unknown): { reason: string } {
 		return parseOrBadRequest(_rejectSchema, body);
 	}
 
 	/** Page → wire DTO. */
-	public toListResponseDTO(
+	public toListRestaurantsResponseDTO(
 		page: TPage<TRestaurant>,
 	): TAdminRestaurantListResponse {
 		return {
@@ -62,8 +80,19 @@ export class AdminRestaurantTransformer {
 		};
 	}
 
+	/** Review detail → wire DTO with full KYC and document download URLs. */
+	public toGetRestaurantResponseDTO(
+		detail: TRestaurantReviewDetail,
+	): TAdminRestaurantDetailResponse {
+		return {
+			...toAdminRestaurantResponse(detail.restaurant),
+			kyc: detail.kyc ? toAdminKycResponse(detail.kyc) : null,
+			documents: detail.documents.map(toRestaurantDocumentResponse),
+		};
+	}
+
 	/** Row → wire DTO. */
-	public toResponseDTO(row: TRestaurant): TAdminRestaurantResponse {
+	public toRestaurantResponseDTO(row: TRestaurant): TAdminRestaurantResponse {
 		return toAdminRestaurantResponse(row);
 	}
 }

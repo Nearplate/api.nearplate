@@ -26,12 +26,16 @@ function applyTestEnv() {
 		GOOGLE_REDIRECT_URI: "http://localhost:3400/auth/google/callback",
 		// S3StorageAdapter itself is faked in the harness; these just satisfy
 		// config validation at boot.
-		S3_BUCKET: "e2e-bucket",
+		S3_IMAGE_BUCKET: "e2e-images",
+		S3_DOCUMENTS_BUCKET: "e2e-documents",
 		S3_REGION: "us-east-1",
 		S3_PUBLIC_BASE_URL: "https://e2e-bucket.s3.us-east-1.amazonaws.com",
 		S3_FORCE_PATH_STYLE: "false",
 		UPLOAD_URL_TTL_SECONDS: "600",
 		UPLOAD_PENDING_TTL_SECONDS: "3600",
+		DOCUMENT_URL_TTL_SECONDS: "300",
+		// Fixture key (32 bytes of 0x07); never a real one.
+		KYC_ENCRYPTION_KEY: "BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc=",
 	});
 
 	delete process.env.LOKI_HOST;
