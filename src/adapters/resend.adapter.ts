@@ -6,6 +6,27 @@ import { ConfigService } from "@nestjs/config";
 const _RESEND_EMAILS_URL = "https://api.resend.com/emails";
 const _REQUEST_TIMEOUT_MS = 10_000;
 
+type TOutgoingEmail = {
+	toAddress: string;
+	subject: string;
+	html: string;
+	text: string;
+	/** What the dev log line calls this email, e.g. `magic link`. */
+	devLogLabel: string;
+	/** The link printed by the dev log fallback. */
+	devLogUrl: string;
+};
+
+/** Escapes user-supplied text (restaurant names, rejection reasons) for HTML bodies. */
+function escapeHtml(value: string): string {
+	return value
+		.replaceAll("&", "&amp;")
+		.replaceAll("<", "&lt;")
+		.replaceAll(">", "&gt;")
+		.replaceAll('"', "&quot;")
+		.replaceAll("'", "&#39;");
+}
+
 /**
  * Sends transactional email through the Resend HTTP API over plain `fetch`.
  *
@@ -38,8 +59,55 @@ export class ResendAdapter {
 		magicLinkUrl: string,
 		expiresInMinutes: number,
 	): Promise<void> {
+		await this._deliver({
+			toAddress,
+			subject: "Your Nearplate sign-in link",
+			html: this._html(magicLinkUrl, expiresInMinutes),
+			text: this._text(magicLinkUrl, expiresInMinutes),
+			devLogLabel: "magic link",
+			devLogUrl: magicLinkUrl,
+		});
+	}
+
+	/** Tells an owner their restaurant is live; throws on a non-2xx response. */
+	public async sendRestaurantApproved(
+		toAddress: string,
+		restaurantName: string,
+		dashboardUrl: string,
+	): Promise<void> {
+		const name = escapeHtml(restaurantName);
+		await this._deliver({
+			toAddress,
+			subject: `${restaurantName} is approved on Nearplate`,
+			html: `<p>Good news: <strong>${name}</strong> has been approved and is now visible to customers.</p><p><a href="${dashboardUrl}">Open your dashboard</a></p>`,
+			text: `Good news: ${restaurantName} has been approved and is now visible to customers.\n\nOpen your dashboard: ${dashboardUrl}`,
+			devLogLabel: "approval email",
+			devLogUrl: dashboardUrl,
+		});
+	}
+
+	/** Tells an owner why a restaurant was rejected; throws on a non-2xx response. */
+	public async sendRestaurantRejected(
+		toAddress: string,
+		restaurantName: string,
+		reason: string,
+		onboardingUrl: string,
+	): Promise<void> {
+		const name = escapeHtml(restaurantName);
+		await this._deliver({
+			toAddress,
+			subject: `${restaurantName} needs changes before approval`,
+			html: `<p>We couldn't approve <strong>${name}</strong> yet.</p><p>Reason: ${escapeHtml(reason)}</p><p><a href="${onboardingUrl}">Fix your details and resubmit</a></p>`,
+			text: `We couldn't approve ${restaurantName} yet.\n\nReason: ${reason}\n\nFix your details and resubmit: ${onboardingUrl}`,
+			devLogLabel: "rejection email",
+			devLogUrl: onboardingUrl,
+		});
+	}
+
+	/** Sends one email, or logs its link in development when no key is set. */
+	private async _deliver(email: TOutgoingEmail): Promise<void> {
 		if (!this._apiKey) {
-			this._logDevLink(toAddress, magicLinkUrl);
+			this._logDevLink(email);
 			return;
 		}
 		const response = await fetch(_RESEND_EMAILS_URL, {
@@ -50,10 +118,10 @@ export class ResendAdapter {
 			},
 			body: JSON.stringify({
 				from: this._from,
-				to: [toAddress],
-				subject: "Your Nearplate sign-in link",
-				html: this._html(magicLinkUrl, expiresInMinutes),
-				text: this._text(magicLinkUrl, expiresInMinutes),
+				to: [email.toAddress],
+				subject: email.subject,
+				html: email.html,
+				text: email.text,
 			}),
 			signal: AbortSignal.timeout(_REQUEST_TIMEOUT_MS),
 		});
@@ -63,18 +131,18 @@ export class ResendAdapter {
 	}
 
 	/**
-	 * Development fallback: prints the link so sign-in works without email. The
+	 * Development fallback: prints the link so flows work without email. The
 	 * URL goes in its own field because the logger redacts `token=` inside
 	 * message strings. Refuses to run in production, where a logged link would
 	 * be a leaked credential (config already requires the key there).
 	 */
-	private _logDevLink(toAddress: string, magicLinkUrl: string): void {
+	private _logDevLink(email: TOutgoingEmail): void {
 		if (this._configService.get("NODE_ENV") === "production") {
 			throw new Error("RESEND_API_KEY is required in production");
 		}
 		this._logger.warn({
-			message: `RESEND_API_KEY not set; magic link for ${maskEmail(toAddress)}`,
-			magicLinkUrl,
+			message: `RESEND_API_KEY not set; ${email.devLogLabel} for ${maskEmail(email.toAddress)}`,
+			magicLinkUrl: email.devLogUrl,
 		});
 	}
 

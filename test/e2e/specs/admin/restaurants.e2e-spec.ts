@@ -181,6 +181,95 @@ describe("admin restaurant review", () => {
 		});
 	});
 
+	describe("owner notification", () => {
+		const SETTLE_MS = 150;
+		const settle = () => new Promise((r) => setTimeout(r, SETTLE_MS));
+
+		it("emails the owner a dashboard link on approval", async () => {
+			const { http, resend } = getE2eApp();
+			const { user, restaurant } = await ownerWithRestaurant();
+
+			await http
+				.post(`/v1/admin/restaurants/${restaurant.id}/approve`)
+				.set("Authorization", await admin())
+				.expect(200);
+
+			const email = await resend.waitForReviewEmail(user.email);
+			expect(email).toMatchObject({
+				kind: "approved",
+				restaurantName: "Spice Hub",
+				url: "http://localhost:3400/restaurant",
+			});
+			await settle();
+			expect(resend.reviews).toHaveLength(1);
+		});
+
+		it("emails the owner the reason and an onboarding link on rejection", async () => {
+			const { http, resend } = getE2eApp();
+			const { user, restaurant } = await ownerWithRestaurant();
+
+			await http
+				.post(`/v1/admin/restaurants/${restaurant.id}/reject`)
+				.set("Authorization", await admin())
+				.send({ reason: "FSSAI number unreadable" })
+				.expect(200);
+
+			const email = await resend.waitForReviewEmail(user.email);
+			expect(email).toMatchObject({
+				kind: "rejected",
+				reason: "FSSAI number unreadable",
+				url: "http://localhost:3400/restaurant/onboarding",
+			});
+			await settle();
+			expect(resend.reviews).toHaveLength(1);
+		});
+
+		it("sends nothing for invalid transitions or unknown restaurants", async () => {
+			const { http, resend } = getE2eApp();
+			const auth = await admin();
+			const approved = await ownerWithRestaurant(
+				RestaurantVerificationStatus.Approved,
+			);
+			const draft = await ownerWithRestaurant(
+				RestaurantVerificationStatus.Draft,
+				"Draft Diner",
+			);
+
+			await http
+				.post(`/v1/admin/restaurants/${approved.restaurant.id}/approve`)
+				.set("Authorization", auth)
+				.expect(409);
+			await http
+				.post(`/v1/admin/restaurants/${draft.restaurant.id}/reject`)
+				.set("Authorization", auth)
+				.send({ reason: "No" })
+				.expect(409);
+			await http
+				.post(
+					"/v1/admin/restaurants/11111111-1111-4111-8111-111111111111/approve",
+				)
+				.set("Authorization", auth)
+				.expect(404);
+
+			await settle();
+			expect(resend.reviews).toHaveLength(0);
+		});
+
+		it("still approves when the email cannot be sent", async () => {
+			const { http, resend } = getE2eApp();
+			const { restaurant } = await ownerWithRestaurant();
+			resend.failReviewEmails = true;
+
+			const res = await http
+				.post(`/v1/admin/restaurants/${restaurant.id}/approve`)
+				.set("Authorization", await admin())
+				.expect(200);
+
+			expect(res.body.verificationStatus).toBe("approved");
+			await http.get("/v1/restaurants/spice-hub").expect(200);
+		});
+	});
+
 	describe("approve and reject", () => {
 		it("approves a pending restaurant, making it public", async () => {
 			const { http } = getE2eApp();

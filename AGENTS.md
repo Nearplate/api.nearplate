@@ -14,7 +14,7 @@ Guidance for AI coding agents (Claude Code, Cursor, Codex, …) working in this 
 - `@nestjs/schedule` for cron (`src/subscribers/`)
 - Zod for request validation and env config
 - JWT access tokens, one secret per role: `admin`, `restaurant`, `user`, `guest`; opaque rotating refresh tokens
-- Sign-in: magic link emailed via Resend (`ResendAdapter`, plain `fetch`) and Google via Authorization Code + PKCE (`GoogleOauthAdapter`)
+- Email via Resend (`ResendAdapter`, plain `fetch`): sign-in magic links, plus approval/rejection notices sent to owners from `AdminService`. Google sign-in uses Authorization Code + PKCE (`GoogleOauthAdapter`)
 - Winston logging (`@LogClass()`, trace ids, optional Loki)
 - ESLint (flat config) + Prettier (tabs, 80 columns, double quotes, trailing commas)
 - npm (Node >= 22)
