@@ -5,6 +5,7 @@ import { AuthRole } from "@/domain/enums/auth-role";
 import { RestaurantOnboardingService } from "@/services/restaurant-onboarding.service";
 import type {
 	TDocumentUploadResponse,
+	TKycResponse,
 	TRestaurantDocumentResponse,
 } from "@/transformers/restaurant-onboarding.dto";
 import {
@@ -21,13 +22,15 @@ import {
 	HttpStatus,
 	Inject,
 	Param,
+	Patch,
 	Post,
 } from "@nestjs/common";
 
 /**
  * Owner onboarding data for a restaurant: KYC documents in the private
- * bucket. Shares the `restaurants` prefix with `RestaurantController`; every
- * handler is owner-only and scoped to the caller (foreign ids are 404).
+ * bucket and KYC/bank details. Shares the `restaurants` prefix with
+ * `RestaurantController`; every handler is owner-only and scoped to the
+ * caller (foreign ids are 404).
  */
 @LogClass()
 @Controller("restaurants")
@@ -38,6 +41,35 @@ export class RestaurantOnboardingController {
 		@Inject(RestaurantOnboardingService)
 		private readonly _restaurantOnboardingService: RestaurantOnboardingService,
 	) {}
+
+	/** The caller's KYC and bank details, PAN and account number masked. */
+	@Roles(AuthRole.Restaurant)
+	@Get(":id/kyc")
+	public async getKyc(
+		@Param("id") id: string,
+		@AuthUser() user: TAuthUser,
+	): Promise<TKycResponse> {
+		const kyc = await this._restaurantOnboardingService.getKyc(user.id, id);
+		return this._restaurantOnboardingTransformer.toGetKycResponseDTO(kyc);
+	}
+
+	/** Saves any subset of the KYC and bank details (partial drafts allowed). */
+	@Roles(AuthRole.Restaurant)
+	@Patch(":id/kyc")
+	public async updateKyc(
+		@Param("id") id: string,
+		@Body() body: unknown,
+		@AuthUser() user: TAuthUser,
+	): Promise<TKycResponse> {
+		const input =
+			this._restaurantOnboardingTransformer.toUpdateKycRequestDTO(body);
+		const kyc = await this._restaurantOnboardingService.updateKyc(
+			user.id,
+			id,
+			input,
+		);
+		return this._restaurantOnboardingTransformer.toUpdateKycResponseDTO(kyc);
+	}
 
 	/** Requests a presigned S3 POST for one KYC document type. */
 	@Roles(AuthRole.Restaurant)

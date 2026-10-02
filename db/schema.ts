@@ -8,6 +8,7 @@ export * from "./schemas/menu-item.schema";
 export * from "./schemas/order-item.schema";
 export * from "./schemas/order.schema";
 export * from "./schemas/restaurant-document.schema";
+export * from "./schemas/restaurant-kyc.schema";
 export * from "./schemas/restaurant.schema";
 export * from "./schemas/upload.schema";
 export * from "./schemas/user.schema";

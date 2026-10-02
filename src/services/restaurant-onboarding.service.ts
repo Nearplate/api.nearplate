@@ -12,10 +12,20 @@ import type {
 	TDocumentUploadResult,
 	TRestaurantDocumentView,
 } from "@/domain/types/restaurant-document.types";
+import type {
+	TKycDetails,
+	TUpdateKycInput,
+} from "@/domain/types/restaurant-kyc.types";
 import { BackgroundJobHelper } from "@/helpers/background-job.helper";
+import { EncryptionHelper } from "@/helpers/encryption.helper";
 import { RestaurantDocumentRepository } from "@/repositories/restaurant-document.repository";
+import {
+	RestaurantKycRepository,
+	type TKycPatch,
+} from "@/repositories/restaurant-kyc.repository";
 import { RestaurantRepository } from "@/repositories/restaurant.repository";
 import type { TRestaurantDocument } from "@db/schemas/restaurant-document.schema";
+import type { TRestaurantKyc } from "@db/schemas/restaurant-kyc.schema";
 import type { TRestaurant } from "@db/schemas/restaurant.schema";
 import {
 	ConflictException,
@@ -35,10 +45,22 @@ const _EDITABLE_STATUSES: readonly RestaurantVerificationStatus[] = [
 	RestaurantVerificationStatus.Rejected,
 ];
 
+/** KYC details before anything has been saved. */
+const _EMPTY_KYC: TKycDetails = {
+	panNumber: null,
+	fssaiNumber: null,
+	accountHolderName: null,
+	accountNumber: null,
+	ifscCode: null,
+	bankName: null,
+	updatedAt: null,
+};
+
 /**
- * Restaurant onboarding data: KYC documents in the private documents bucket.
- * Every route is owner-scoped (another owner's restaurant is a 404); writes
- * are 409 unless the restaurant is `draft` or `rejected`.
+ * Restaurant onboarding data: KYC documents in the private documents bucket
+ * and KYC/bank details (PAN and account number encrypted at rest). Every
+ * route is owner-scoped (another owner's restaurant is a 404); writes are 409
+ * unless the restaurant is `draft` or `rejected`.
  */
 @LogClass()
 @Injectable()
@@ -54,7 +76,53 @@ export class RestaurantOnboardingService {
 		private readonly _backgroundJobHelper: BackgroundJobHelper,
 		@Inject(ConfigService)
 		private readonly _configService: ConfigService<TConfig>,
+		@Inject(RestaurantKycRepository)
+		private readonly _restaurantKycRepository: RestaurantKycRepository,
+		@Inject(EncryptionHelper)
+		private readonly _encryptionHelper: EncryptionHelper,
 	) {}
+
+	/** The caller's decrypted KYC details (all null before the first save). */
+	public async getKyc(ownerId: string, id: string): Promise<TKycDetails> {
+		const restaurant = await this._getRestaurant(ownerId, id);
+		const row = await this._restaurantKycRepository.findByRestaurantId(
+			ownerId,
+			restaurant.id,
+		);
+		return row ? this._decryptKyc(row) : _EMPTY_KYC;
+	}
+
+	/**
+	 * Saves the KYC fields present in `input` (a partial draft is fine) and
+	 * returns the merged details. PAN and account number are encrypted before
+	 * they reach the repository.
+	 */
+	public async updateKyc(
+		ownerId: string,
+		id: string,
+		input: TUpdateKycInput,
+	): Promise<TKycDetails> {
+		const restaurant = await this._getEditable(ownerId, id);
+		const { panNumber, accountNumber, ...plain } = input;
+		const patch: TKycPatch = {
+			...plain,
+			...(panNumber !== undefined && {
+				panNumberEncrypted: this._encryptionHelper.encrypt(panNumber),
+			}),
+			...(accountNumber !== undefined && {
+				accountNumberEncrypted: this._encryptionHelper.encrypt(accountNumber),
+			}),
+		};
+		const row = await this._restaurantKycRepository.upsert(
+			ownerId,
+			restaurant.id,
+			patch,
+		);
+		if (!row) {
+			throw new NotFoundException();
+		}
+		return this._decryptKyc(row);
+	}
 
 	/**
 	 * Issues a presigned POST for one document type and records it as pending,
@@ -221,6 +289,23 @@ export class RestaurantOnboardingService {
 			);
 		}
 		return restaurant;
+	}
+
+	/** Row → decrypted details. */
+	private _decryptKyc(row: TRestaurantKyc): TKycDetails {
+		return {
+			panNumber: row.panNumberEncrypted
+				? this._encryptionHelper.decrypt(row.panNumberEncrypted)
+				: null,
+			fssaiNumber: row.fssaiNumber,
+			accountHolderName: row.accountHolderName,
+			accountNumber: row.accountNumberEncrypted
+				? this._encryptionHelper.decrypt(row.accountNumberEncrypted)
+				: null,
+			ifscCode: row.ifscCode,
+			bankName: row.bankName,
+			updatedAt: row.updatedAt,
+		};
 	}
 
 	/** Adds a short-lived presigned GET URL to confirmed documents only. */
