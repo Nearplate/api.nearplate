@@ -33,10 +33,12 @@ import {
 	type TImageUploadResponse,
 	type TNearbyRestaurantResponse,
 	type TQrCodeResponse,
+	type TOwnerRestaurantResponse,
 	type TRestaurantResponse,
 	toImageUploadResponse,
 	toNearbyRestaurantResponse,
 	toQrCodeResponse,
+	toOwnerRestaurantResponse,
 	toRestaurantResponse,
 } from "./restaurant.dto";
 
@@ -232,7 +234,7 @@ const _createMenuItemImageUploadSchema = z
 	});
 
 export type TRestaurantListResponse = {
-	items: TRestaurantResponse[];
+	items: TOwnerRestaurantResponse[];
 	total: number;
 };
 export type TMenuItemListResponse = {
@@ -295,23 +297,26 @@ export class RestaurantTransformer {
 	}
 
 	/** Row → wire DTO. */
-	public toCreateResponseDTO(row: TRestaurant): TRestaurantResponse {
-		return toRestaurantResponse(row);
+	public toCreateResponseDTO(row: TRestaurant): TOwnerRestaurantResponse {
+		return toOwnerRestaurantResponse(row);
 	}
 
 	/** Page → wire DTO. */
 	public toListResponseDTO(page: TPage<TRestaurant>): TRestaurantListResponse {
-		return { items: page.items.map(toRestaurantResponse), total: page.total };
+		return {
+			items: page.items.map(toOwnerRestaurantResponse),
+			total: page.total,
+		};
 	}
 
 	/** Row → wire DTO. */
-	public toGetResponseDTO(row: TRestaurant): TRestaurantResponse {
-		return toRestaurantResponse(row);
+	public toGetResponseDTO(row: TRestaurant): TOwnerRestaurantResponse {
+		return toOwnerRestaurantResponse(row);
 	}
 
 	/** Row → wire DTO. */
-	public toUpdateResponseDTO(row: TRestaurant): TRestaurantResponse {
-		return toRestaurantResponse(row);
+	public toUpdateResponseDTO(row: TRestaurant): TOwnerRestaurantResponse {
+		return toOwnerRestaurantResponse(row);
 	}
 
 	/** Query → nearby search input (radius in km on the wire, metres inside). */
@@ -429,8 +434,8 @@ export class RestaurantTransformer {
 	/** Row → wire DTO. */
 	public toConfirmImageUploadResponseDTO(
 		row: TRestaurant,
-	): TRestaurantResponse {
-		return toRestaurantResponse(row);
+	): TOwnerRestaurantResponse {
+		return toOwnerRestaurantResponse(row);
 	}
 
 	/** Body → new-upload input for a menu item's photo; 400 for a disallowed type or oversize request. */

@@ -192,6 +192,36 @@ describe("owner restaurants", () => {
 			expect(page.body.total).toBe(2);
 		});
 
+		it("exposes the verification state to owners only", async () => {
+			const { http, app } = getE2eApp();
+			const { user, auth } = await owner();
+			const r = await create(auth);
+			expect(r).toMatchObject({
+				verificationStatus: "draft",
+				rejectionReason: null,
+			});
+
+			await app.get(RestaurantRepository).update(user.id, r.id, {
+				verificationStatus: RestaurantVerificationStatus.Rejected,
+				rejectionReason: "Blurry documents",
+			});
+			const mine = await http
+				.get("/v1/restaurants/mine")
+				.set("Authorization", auth)
+				.expect(200);
+			expect(mine.body.items[0]).toMatchObject({
+				verificationStatus: "rejected",
+				rejectionReason: "Blurry documents",
+			});
+
+			await app.get(RestaurantRepository).update(user.id, r.id, {
+				verificationStatus: RestaurantVerificationStatus.Approved,
+			});
+			const pub = await http.get("/v1/restaurants/spice-hub").expect(200);
+			expect(pub.body).not.toHaveProperty("verificationStatus");
+			expect(pub.body).not.toHaveProperty("rejectionReason");
+		});
+
 		it("filters by status", async () => {
 			const { http } = getE2eApp();
 			const { auth } = await owner();
