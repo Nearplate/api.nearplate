@@ -34,6 +34,8 @@ function applyTestEnv() {
 		UPLOAD_URL_TTL_SECONDS: "600",
 		UPLOAD_PENDING_TTL_SECONDS: "3600",
 		DOCUMENT_URL_TTL_SECONDS: "300",
+		// Fixture key (32 bytes of 0x07); never a real one.
+		KYC_ENCRYPTION_KEY: "BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc=",
 	});
 
 	delete process.env.LOKI_HOST;

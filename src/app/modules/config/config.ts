@@ -125,6 +125,24 @@ export const UploadConfigSchema = z.object({
 	DOCUMENT_URL_TTL_SECONDS: _seconds.default(300), // 5 minutes
 });
 
+/** Bytes in an AES-256 key. */
+const _AES_256_KEY_BYTES = 32;
+
+/**
+ * Key for `EncryptionHelper` (AES-256-GCM), which encrypts KYC bank account
+ * and PAN numbers at rest. Required at boot: 32 random bytes, base64-encoded.
+ * Rotating it makes existing ciphertext unreadable, so never change it
+ * without re-encrypting.
+ */
+export const KycConfigSchema = z.object({
+	KYC_ENCRYPTION_KEY: _str.refine(
+		(value) =>
+			/^[A-Za-z0-9+/]+={0,2}$/.test(value) &&
+			Buffer.from(value, "base64").length === _AES_256_KEY_BYTES,
+		{ message: "KYC_ENCRYPTION_KEY must be 32 bytes, base64-encoded" },
+	),
+});
+
 export const ConfigSchema = NodeConfigSchema.merge(LogConfigSchema)
 	.merge(ServerAppConfigSchema)
 	.merge(CorsConfigSchema)
@@ -137,6 +155,7 @@ export const ConfigSchema = NodeConfigSchema.merge(LogConfigSchema)
 	.merge(ResendConfigSchema)
 	.merge(S3ConfigSchema)
 	.merge(UploadConfigSchema)
+	.merge(KycConfigSchema)
 	.superRefine((config, ctx) => {
 		if (config.NODE_ENV === "production" && !config.RESEND_API_KEY) {
 			ctx.addIssue({
