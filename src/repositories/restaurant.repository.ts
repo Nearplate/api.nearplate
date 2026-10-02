@@ -17,6 +17,12 @@ import { and, count, desc, eq, sql } from "drizzle-orm";
 
 const _SLUG_ATTEMPTS = 5;
 
+/** Customer-visible restaurants only. */
+const _isApproved = eq(
+	restaurants.verificationStatus,
+	RestaurantVerificationStatus.Approved,
+);
+
 /** Persistence-level create: the address already exists, coordinates are GeoJSON. */
 export type TCreateRestaurantRecord = {
 	name: string;
@@ -168,26 +174,32 @@ export class RestaurantRepository {
 	}
 
 	/**
-	 * Lookup by id with no owner scope, for callers (order placement) that
-	 * need the restaurant's status and `ownerId` without owning it themselves.
+	 * Customer-facing lookup by id with no owner scope (order placement, carts).
+	 * Only approved restaurants are visible; anything else is null.
 	 */
 	public async findByIdPublic(id: string): Promise<TRestaurant | null> {
 		if (!isUuid(id)) {
 			return null;
 		}
-		return this._selectJoined(this._databaseService.db, eq(restaurants.id, id));
-	}
-
-	/** Public lookup by slug (any status, so clients can show "closed"). */
-	public async findBySlug(slug: string): Promise<TRestaurant | null> {
 		return this._selectJoined(
 			this._databaseService.db,
-			eq(restaurants.slug, slug),
+			and(eq(restaurants.id, id), _isApproved),
 		);
 	}
 
 	/**
-	 * Online restaurants within `radiusMeters` of a point, nearest first, with
+	 * Public lookup by slug (any online status, so clients can show "closed").
+	 * Only approved restaurants are visible.
+	 */
+	public async findBySlug(slug: string): Promise<TRestaurant | null> {
+		return this._selectJoined(
+			this._databaseService.db,
+			and(eq(restaurants.slug, slug), _isApproved),
+		);
+	}
+
+	/**
+	 * Approved, online restaurants within `radiusMeters` of a point, nearest first, with
 	 * `distanceMeters`. Casts `location` to `geography` so `ST_DWithin` and
 	 * `ST_Distance` measure real meters over the sphere, not planar degrees.
 	 */
@@ -208,6 +220,7 @@ export class RestaurantRepository {
 			.where(
 				and(
 					eq(restaurants.status, RestaurantStatus.Online),
+					_isApproved,
 					sql`ST_DWithin(${restaurants.location}::geography, ${point}, ${input.radiusMeters})`,
 					input.isPureVeg !== undefined
 						? eq(restaurants.isPureVeg, input.isPureVeg)

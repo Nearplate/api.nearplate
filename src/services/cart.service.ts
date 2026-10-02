@@ -5,6 +5,7 @@ import {
 	MAX_ITEM_QUANTITY,
 } from "@/domain/constants/cart.constants";
 import { RestaurantStatus } from "@/domain/enums/restaurant-status";
+import { RestaurantVerificationStatus } from "@/domain/enums/restaurant-verification-status";
 import type {
 	TAddCartItemInput,
 	TCheckoutCartInput,
@@ -266,6 +267,8 @@ export class CartService {
 			0,
 		);
 		const canCheckout =
+			cart.restaurant.verificationStatus ===
+				RestaurantVerificationStatus.Approved &&
 			cart.restaurant.status === RestaurantStatus.Online &&
 			items.length > 0 &&
 			items.every((item) => item.isAvailable);

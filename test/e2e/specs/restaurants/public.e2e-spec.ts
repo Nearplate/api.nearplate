@@ -1,5 +1,6 @@
 import { AuthRole } from "@/domain/enums/auth-role";
 import { RestaurantStatus } from "@/domain/enums/restaurant-status";
+import { RESTAURANT_VERIFICATION_STATUSES } from "@/domain/enums/restaurant-verification-status";
 import { RestaurantService } from "@/services/restaurant.service";
 import { getE2eApp } from "../../helpers/app.harness";
 
@@ -247,5 +248,35 @@ describe("public restaurants", () => {
 			await http.get("/v1/owner/restaurants").expect(404);
 			await http.get("/v1/owner/menu-items").expect(404);
 		});
+	});
+	describe("verification gate", () => {
+		const UNAPPROVED = RESTAURANT_VERIFICATION_STATUSES.filter(
+			(status) => status !== "approved",
+		);
+
+		it.each(UNAPPROVED)(
+			"hides a %s restaurant from nearby, :slug and :slug/menu",
+			async (verificationStatus) => {
+				const { http, seedRestaurant, seedMenuItem } = getE2eApp();
+				const user = await owner();
+				const r = await seedRestaurant(
+					user.id,
+					{},
+					{
+						verificationStatus,
+						status: RestaurantStatus.Online,
+					},
+				);
+				await seedMenuItem(user.id, r.id);
+
+				await http.get("/v1/restaurants/spice-hub").expect(404);
+				await http.get("/v1/restaurants/spice-hub/menu").expect(404);
+				const nearby = await http
+					.get("/v1/restaurants/nearby")
+					.query({ lat: CENTER[1], lng: CENTER[0] })
+					.expect(200);
+				expect(nearby.body.items).toHaveLength(0);
+			},
+		);
 	});
 });

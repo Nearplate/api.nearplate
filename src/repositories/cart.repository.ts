@@ -1,6 +1,7 @@
 import { DatabaseService } from "@/app/modules/database";
 import { LogClass } from "@/app/modules/logger";
 import type { RestaurantStatus } from "@/domain/enums/restaurant-status";
+import type { RestaurantVerificationStatus } from "@/domain/enums/restaurant-verification-status";
 import { isUuid } from "@/repositories/repository.utils";
 import { cartItems, type TCartItem } from "@db/schemas/cart-item.schema";
 import { carts, type TCart } from "@db/schemas/cart.schema";
@@ -21,7 +22,12 @@ export type TCartItemRow = {
 
 /** A cart plus its restaurant and lines, all read live -- no pricing here. */
 export type TCartRow = TCart & {
-	restaurant: { name: string; slug: string; status: RestaurantStatus };
+	restaurant: {
+		name: string;
+		slug: string;
+		status: RestaurantStatus;
+		verificationStatus: RestaurantVerificationStatus;
+	};
 	items: TCartItemRow[];
 };
 
@@ -194,6 +200,7 @@ export class CartRepository {
 				name: restaurants.name,
 				slug: restaurants.slug,
 				status: restaurants.status,
+				verificationStatus: restaurants.verificationStatus,
 			})
 			.from(restaurants)
 			.where(eq(restaurants.id, cart.restaurantId));
