@@ -73,6 +73,25 @@ export function toOwnerRestaurantResponse(
 	};
 }
 
+/** Admin wire shape: the owner shape plus the owner id and review times. */
+export type TAdminRestaurantResponse = TOwnerRestaurantResponse & {
+	ownerId: string;
+	submittedAt: string | null;
+	reviewedAt: string | null;
+};
+
+/** Row → admin wire DTO (admin routes only). */
+export function toAdminRestaurantResponse(
+	row: TRestaurant,
+): TAdminRestaurantResponse {
+	return {
+		...toOwnerRestaurantResponse(row),
+		ownerId: row.ownerId,
+		submittedAt: row.submittedAt ? row.submittedAt.toISOString() : null,
+		reviewedAt: row.reviewedAt ? row.reviewedAt.toISOString() : null,
+	};
+}
+
 /** Nearby row → wire DTO with the distance rounded to whole metres. */
 export function toNearbyRestaurantResponse(
 	row: TNearbyRestaurant,

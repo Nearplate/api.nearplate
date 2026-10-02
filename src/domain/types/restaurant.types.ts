@@ -1,3 +1,4 @@
+import type { RestaurantVerificationStatus } from "@/domain/enums/restaurant-verification-status";
 import type { RestaurantStatus } from "@/domain/enums/restaurant-status";
 
 /** `[longitude, latitude]`, the GeoJSON order. */
@@ -37,6 +38,13 @@ export type TUpdateRestaurantInput = Partial<{
 
 export type TListRestaurantsInput = {
 	status?: RestaurantStatus;
+	limit: number;
+	offset: number;
+};
+
+/** Admin review queue filter: one verification state, oldest submission first. */
+export type TListRestaurantsForReviewInput = {
+	verificationStatus: RestaurantVerificationStatus;
 	limit: number;
 	offset: number;
 };

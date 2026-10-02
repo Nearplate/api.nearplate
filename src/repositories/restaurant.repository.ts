@@ -3,6 +3,7 @@ import { LogClass } from "@/app/modules/logger";
 import { RestaurantStatus } from "@/domain/enums/restaurant-status";
 import { RestaurantVerificationStatus } from "@/domain/enums/restaurant-verification-status";
 import type {
+	TListRestaurantsForReviewInput,
 	TListRestaurantsInput,
 	TNearbyRestaurantsInput,
 } from "@/domain/types/restaurant.types";
@@ -13,7 +14,7 @@ import { addresses, type TAddress } from "@db/schemas/address.schema";
 import type { TGeoPoint } from "@db/schemas/geo";
 import { restaurants, type TRestaurant } from "@db/schemas/restaurant.schema";
 import { Inject, Injectable } from "@nestjs/common";
-import { and, count, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, inArray, sql } from "drizzle-orm";
 
 const _SLUG_ATTEMPTS = 5;
 
@@ -189,6 +190,39 @@ export class RestaurantRepository {
 			)
 			.returning({ id: restaurants.id });
 		if (!updated) {
+			return null;
+		}
+		return this._selectJoined(this._databaseService.db, eq(restaurants.id, id));
+	}
+
+	/** Admin review queue: one verification state, oldest submission first. */
+	public async listByVerificationStatus(
+		query: TListRestaurantsForReviewInput,
+	): Promise<TPage<TRestaurant>> {
+		const filter = eq(restaurants.verificationStatus, query.verificationStatus);
+		const [rows, [totalRow]] = await Promise.all([
+			this._databaseService.db
+				.select({ restaurant: restaurants, address: addresses })
+				.from(restaurants)
+				.innerJoin(addresses, eq(restaurants.addressId, addresses.id))
+				.where(filter)
+				.orderBy(asc(restaurants.submittedAt), asc(restaurants.id))
+				.limit(query.limit)
+				.offset(query.offset),
+			this._databaseService.db
+				.select({ total: count() })
+				.from(restaurants)
+				.where(filter),
+		]);
+		return {
+			items: rows.map((row) => this._toRow(row)),
+			total: totalRow?.total ?? 0,
+		};
+	}
+
+	/** Lookup by id for admins: no owner scope, any verification state. */
+	public async findByIdAny(id: string): Promise<TRestaurant | null> {
+		if (!isUuid(id)) {
 			return null;
 		}
 		return this._selectJoined(this._databaseService.db, eq(restaurants.id, id));
