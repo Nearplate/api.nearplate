@@ -4,6 +4,7 @@ import { AppController } from "@/controllers/app.controller";
 import { AuthController } from "@/controllers/auth.controller";
 import { CartController } from "@/controllers/cart.controller";
 import { OrderController } from "@/controllers/order.controller";
+import { RestaurantOnboardingController } from "@/controllers/restaurant-onboarding.controller";
 import { RestaurantController } from "@/controllers/restaurant.controller";
 import { UserController } from "@/controllers/user.controller";
 
@@ -16,4 +17,5 @@ export const Controllers = [
 	OrderController,
 	CartController,
 	AdminRestaurantController,
+	RestaurantOnboardingController,
 ];

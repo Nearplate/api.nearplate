@@ -76,18 +76,21 @@ export class RestaurantDocumentRepository {
 	}
 
 	/**
-	 * Flips a pending row to `uploaded`, but only while it still points at
-	 * `objectKey` -- a newer presign for the same type wins over a stale confirm.
+	 * Flips a pending row to `uploaded` with the size S3 reports, but only
+	 * while it still points at `objectKey` -- a newer presign for the same type
+	 * wins over a stale confirm.
 	 */
 	public async markUploaded(
 		ownerId: string,
 		restaurantId: string,
 		type: RestaurantDocumentType,
 		objectKey: string,
+		size: number,
 	): Promise<TRestaurantDocument | null> {
 		const [row] = await this._databaseService.db
 			.update(restaurantDocuments)
 			.set({
+				size,
 				status: RestaurantDocumentStatus.Uploaded,
 				expiresAt: null,
 				updatedAt: sql`now()`,

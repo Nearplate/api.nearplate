@@ -55,6 +55,18 @@ export const ErrorMessages = {
 			`Restaurant is missing required data: ${missing.join(", ")}`,
 		),
 
+	restaurantOnboardingLocked: (status: string): TAppError =>
+		appError(
+			"RESTAURANT_ONBOARDING_LOCKED",
+			`Onboarding details cannot be changed while the restaurant is ${status}`,
+		),
+
+	restaurantDocumentUploadMismatch: (type: string): TAppError =>
+		appError(
+			"RESTAURANT_DOCUMENT_UPLOAD_MISMATCH",
+			`The ${type} file is missing or does not match the requested upload`,
+		),
+
 	menuItemsNotInRestaurant: (restaurantName: string): TAppError =>
 		appError(
 			"MENU_ITEMS_NOT_IN_RESTAURANT",
