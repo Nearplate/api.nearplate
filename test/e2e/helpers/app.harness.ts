@@ -41,6 +41,7 @@ const _TABLES = [
 	"order_items",
 	"orders",
 	"uploads",
+	"restaurant_documents",
 	"menu_items",
 	"restaurants",
 	"addresses",

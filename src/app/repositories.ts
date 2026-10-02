@@ -4,6 +4,7 @@ import { AddressRepository } from "@/repositories/address.repository";
 import { CartRepository } from "@/repositories/cart.repository";
 import { MenuItemRepository } from "@/repositories/menu-item.repository";
 import { OrderRepository } from "@/repositories/order.repository";
+import { RestaurantDocumentRepository } from "@/repositories/restaurant-document.repository";
 import { RestaurantRepository } from "@/repositories/restaurant.repository";
 import { UploadRepository } from "@/repositories/upload.repository";
 import { UserRepository } from "@/repositories/user.repository";
@@ -19,4 +20,5 @@ export const Repositories: Provider[] = [
 	OrderRepository,
 	UploadRepository,
 	CartRepository,
+	RestaurantDocumentRepository,
 ];
