@@ -100,10 +100,10 @@ export const ResendConfigSchema = z.object({
  */
 export const S3ConfigSchema = z.object({
 	/** Public bucket for restaurant logos, banners and menu-item photos. */
-	S3_IMAGE_BUCKET: _str.min(1),
+	S3_IMAGES_BUCKET: _str.min(1),
 	/**
 	 * Private bucket for restaurant KYC documents, on the same region, endpoint
-	 * and credentials as `S3_IMAGE_BUCKET`. Objects are only ever read through
+	 * and credentials as `S3_IMAGES_BUCKET`. Objects are only ever read through
 	 * short-lived presigned GET URLs; it must not allow public reads.
 	 */
 	S3_DOCUMENTS_BUCKET: _str.min(1),

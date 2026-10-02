@@ -26,7 +26,7 @@ function applyTestEnv() {
 		GOOGLE_REDIRECT_URI: "http://localhost:3400/auth/google/callback",
 		// S3StorageAdapter itself is faked in the harness; these just satisfy
 		// config validation at boot.
-		S3_IMAGE_BUCKET: "e2e-images",
+		S3_IMAGES_BUCKET: "e2e-images",
 		S3_DOCUMENTS_BUCKET: "e2e-documents",
 		S3_REGION: "us-east-1",
 		S3_PUBLIC_BASE_URL: "https://e2e-bucket.s3.us-east-1.amazonaws.com",

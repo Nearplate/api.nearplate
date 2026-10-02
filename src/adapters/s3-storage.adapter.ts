@@ -18,7 +18,7 @@ const _DELETE_BATCH_SIZE = 1000;
 
 /**
  * Which bucket an operation targets: `image` holds logos, banners and menu
- * photos (`S3_IMAGE_BUCKET`); `documents` holds private KYC documents
+ * photos (`S3_IMAGES_BUCKET`); `documents` holds private KYC documents
  * (`S3_DOCUMENTS_BUCKET`), which are only ever read via presigned GETs.
  */
 export type TS3Bucket = "image" | "documents";
@@ -52,7 +52,7 @@ export class S3StorageAdapter {
 		private readonly _configService: ConfigService<TConfig>,
 	) {
 		this._buckets = {
-			image: this._configService.getOrThrow("S3_IMAGE_BUCKET"),
+			image: this._configService.getOrThrow("S3_IMAGES_BUCKET"),
 			documents: this._configService.getOrThrow("S3_DOCUMENTS_BUCKET"),
 		};
 		this._publicBaseUrl = this._configService
