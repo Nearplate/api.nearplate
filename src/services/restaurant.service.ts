@@ -1,4 +1,5 @@
 import { S3StorageAdapter } from "@/adapters/s3-storage.adapter";
+import { ErrorMessages } from "@/app/constants/errors";
 import type { TConfig } from "@/app/modules/config/config";
 import { DatabaseService } from "@/app/modules/database";
 import { LogClass } from "@/app/modules/logger";
@@ -13,7 +14,8 @@ import type {
 	TListMenuItemsInput,
 	TUpdateMenuItemInput,
 } from "@/domain/types/menu-item.types";
-import type { RestaurantStatus } from "@/domain/enums/restaurant-status";
+import { RestaurantStatus } from "@/domain/enums/restaurant-status";
+import { RestaurantVerificationStatus } from "@/domain/enums/restaurant-verification-status";
 import type { TPage } from "@/domain/types/page.types";
 import type {
 	TCoordinates,
@@ -193,12 +195,25 @@ export class RestaurantService {
 		this._deleteReplacedImage(current.bannerUrl, null);
 	}
 
-	/** Puts the caller's restaurant online or offline. */
+	/**
+	 * Puts the caller's restaurant online or offline. Going online requires
+	 * the restaurant to be approved (409); going offline is always allowed.
+	 */
 	public async setStatus(
 		ownerId: string,
 		id: string,
 		status: RestaurantStatus,
 	): Promise<TRestaurant> {
+		if (status === RestaurantStatus.Online) {
+			const current = await this.get(ownerId, id);
+			if (
+				current.verificationStatus !== RestaurantVerificationStatus.Approved
+			) {
+				throw new ConflictException(
+					ErrorMessages.restaurantNotApproved(current.name),
+				);
+			}
+		}
 		const updated = await this._restaurantRepository.update(ownerId, id, {
 			status,
 		});

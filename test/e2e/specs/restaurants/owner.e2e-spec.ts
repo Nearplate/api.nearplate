@@ -1,6 +1,8 @@
 import { AuthRole } from "@/domain/enums/auth-role";
+import { RestaurantVerificationStatus } from "@/domain/enums/restaurant-verification-status";
 import { AddressRepository } from "@/repositories/address.repository";
 import { MenuItemRepository } from "@/repositories/menu-item.repository";
+import { RestaurantRepository } from "@/repositories/restaurant.repository";
 import { getE2eApp } from "../../helpers/app.harness";
 
 const BODY = {
@@ -88,7 +90,7 @@ describe("owner restaurants", () => {
 			expect(r).toMatchObject({
 				name: "Spice Hub",
 				slug: "spice-hub",
-				status: "online",
+				status: "offline",
 				cuisines: ["indian", "chinese"],
 				isPureVeg: false,
 				coordinates: [77.5946, 12.9716],
@@ -402,6 +404,56 @@ describe("owner restaurants", () => {
 				.set("Authorization", auth)
 				.send({ status: "closed" })
 				.expect(400);
+		});
+
+		it("returns 409 when going online before approval, and allows it after", async () => {
+			const { http, app } = getE2eApp();
+			const { user, auth } = await owner();
+			const r = await create(auth);
+
+			const blocked = await http
+				.patch(`/v1/restaurants/${r.id}/status`)
+				.set("Authorization", auth)
+				.send({ status: "online" })
+				.expect(409);
+			expect(blocked.body.code).toBe("RESTAURANT_NOT_APPROVED");
+
+			await app.get(RestaurantRepository).update(user.id, r.id, {
+				verificationStatus: RestaurantVerificationStatus.Approved,
+			});
+			const online = await http
+				.patch(`/v1/restaurants/${r.id}/status`)
+				.set("Authorization", auth)
+				.send({ status: "online" })
+				.expect(200);
+			expect(online.body.status).toBe("online");
+		});
+
+		it("lets the owner manage an unapproved restaurant and its menu", async () => {
+			const { http } = getE2eApp();
+			const { auth } = await owner();
+			const r = await create(auth);
+
+			await http
+				.patch(`/v1/restaurants/${r.id}`)
+				.set("Authorization", auth)
+				.send({ name: "Spice Hub Deluxe" })
+				.expect(200);
+			await http
+				.post(`/v1/restaurants/${r.id}/menu/items`)
+				.set("Authorization", auth)
+				.send({
+					name: "Paneer Tikka",
+					category: "Starters",
+					priceInPaise: 24900,
+					foodType: "veg",
+				})
+				.expect(201);
+			const items = await http
+				.get(`/v1/restaurants/${r.id}/menu/items`)
+				.set("Authorization", auth)
+				.expect(200);
+			expect(items.body.total).toBe(1);
 		});
 
 		it("returns 404 for another owner on update and status", async () => {
